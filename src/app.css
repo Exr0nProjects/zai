@@ -1,2 +1,12 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
+
+/* Set Barlow as the default app font family */
+body {
+  font-family: 'Barlow', sans-serif;
+}
+
+/* Ensure all elements inherit the font */
+* {
+  font-family: inherit;
+}

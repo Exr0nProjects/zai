@@ -20,17 +20,9 @@ export const TimelineMark = Mark.create({
   renderHTML({ HTMLAttributes }) {
     return ['span', {
       ...HTMLAttributes,
-      'data-timeline': '',
-      class: 'timeline-marker relative inline-block w-full border-t-2 border-blue-500 my-2',
-      style: 'position: relative;'
-    }, [
-      'span',
-      {
-        class: 'absolute -top-2 left-0 bg-blue-500 text-white text-xs px-2 py-1 rounded-full',
-        style: 'transform: translateY(-50%);'
-      },
-      'Now'
-    ]];
+      'data-timeline': 'true',
+      class: 'timeline-marker'
+    }, 0];
   },
 
   addCommands() {

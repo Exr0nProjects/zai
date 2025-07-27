@@ -6,6 +6,91 @@ import { get } from 'svelte/store';
 export const notes = writable([]);
 export const isLoading = writable(false);
 
+// Simple markdown parser for basic formatting
+function parseMarkdownContent(text) {
+  // Check if it's a heading
+  const headingMatch = text.match(/^(#{1,6})\s+(.*)$/);
+  if (headingMatch) {
+    return {
+      type: 'heading',
+      attrs: { level: headingMatch[1].length },
+      content: parseInlineMarkdown(headingMatch[2])
+    };
+  }
+  
+  // Regular paragraph
+  return {
+    type: 'paragraph',
+    content: parseInlineMarkdown(text)
+  };
+}
+
+// Parse inline markdown formatting (bold, italic, code)
+function parseInlineMarkdown(text) {
+  const content = [];
+  let currentIndex = 0;
+  
+  // Regex patterns for markdown formatting
+  const patterns = [
+    { regex: /\*\*(.*?)\*\*/g, mark: 'strong' },
+    { regex: /\*(.*?)\*/g, mark: 'em' },
+    { regex: /`(.*?)`/g, mark: 'code' }
+  ];
+  
+  // Find all matches and their positions
+  const matches = [];
+  patterns.forEach(pattern => {
+    let match;
+    while ((match = pattern.regex.exec(text)) !== null) {
+      matches.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        text: match[1],
+        mark: pattern.mark,
+        fullMatch: match[0]
+      });
+    }
+  });
+  
+  // Sort matches by position
+  matches.sort((a, b) => a.start - b.start);
+  
+  // Process text with formatting
+  matches.forEach(match => {
+    // Add text before the match
+    if (currentIndex < match.start) {
+      const plainText = text.slice(currentIndex, match.start);
+      if (plainText) {
+        content.push({ type: 'text', text: plainText });
+      }
+    }
+    
+    // Add the formatted text
+    content.push({
+      type: 'text',
+      text: match.text,
+      marks: [{ type: match.mark }]
+    });
+    
+    currentIndex = match.end;
+  });
+  
+  // Add remaining text
+  if (currentIndex < text.length) {
+    const remainingText = text.slice(currentIndex);
+    if (remainingText) {
+      content.push({ type: 'text', text: remainingText });
+    }
+  }
+  
+  // If no formatting was found, return the original text
+  if (content.length === 0) {
+    content.push({ type: 'text', text: text });
+  }
+  
+  return content;
+}
+
 // Generate client-side ID that fits in PostgreSQL bigint (64-bit signed integer)
 function generateNoteId() {
   const currentUser = get(user);
@@ -113,6 +198,7 @@ export const notesActions = {
         content: [
           {
             type: 'paragraph',
+            attrs: { class: 'past-content' },
             content: [
               {
                 type: 'text',
@@ -122,11 +208,18 @@ export const notesActions = {
           },
           {
             type: 'paragraph',
-            marks: [{ type: 'timeline' }],
-            content: []
+            attrs: { class: 'timeline-now' },
+            content: [
+              {
+                type: 'text',
+                text: '​', // Empty space for the mark to wrap
+                marks: [{ type: 'timeline' }]
+              }
+            ]
           },
           {
             type: 'paragraph',
+            attrs: { class: 'future-content' },
             content: []
           }
         ]
@@ -139,48 +232,86 @@ export const notesActions = {
 
     const content = [];
     let timelineInserted = false;
+    let pastNotes = [];
+    let futureNotes = [];
 
+    // Separate notes into past and future
     for (const note of sortedNotes) {
       const noteTime = new Date(note.created_at);
       
-      // Insert timeline mark if we've passed the current time
-      if (!timelineInserted && noteTime > currentTime) {
-        content.push({
-          type: 'paragraph',
-          marks: [{ type: 'timeline' }],
-          content: []
-        });
-        timelineInserted = true;
-      }
-
-      // Add the note content
       if (note.contents.trim()) {
-        content.push({
-          type: 'paragraph',
-          content: [
-            {
-              type: 'text',
-              text: note.contents
-            }
-          ]
+        const timeStr = noteTime.toLocaleTimeString('en-US', { 
+          hour: '2-digit', 
+          minute: '2-digit',
+          hour12: false 
         });
+        
+        // Parse markdown content into Tiptap format
+        const parsedContent = parseMarkdownContent(note.contents.trim());
+        
+        const nodeData = {
+          type: parsedContent.type || 'paragraph',
+          attrs: {
+            timestamp: timeStr,
+            noteId: note.id,
+            class: noteTime <= currentTime ? 'past-content' : 'future-content',
+            ...(parsedContent.attrs || {})
+          },
+          content: parsedContent.content
+        };
+        
+
+        
+        if (noteTime <= currentTime) {
+          pastNotes.push(nodeData);
+        } else {
+          futureNotes.push(nodeData);
+        }
       }
     }
 
-    // If timeline wasn't inserted (all notes are in the past), add it at the end
-    if (!timelineInserted) {
+    // Add all past notes
+    content.push(...pastNotes);
+
+    // Check if we should show the timeline mark (only if 2+ minutes from last note)
+    let shouldShowTimeline = true;
+    if (pastNotes.length > 0) {
+      // Get the most recent past note's timestamp
+      const lastNote = sortedNotes.filter(note => 
+        new Date(note.created_at) <= currentTime && note.contents.trim()
+      ).pop();
+      
+      if (lastNote) {
+        const lastNoteTime = new Date(lastNote.created_at);
+        const timeDiffMinutes = (currentTime - lastNoteTime) / (1000 * 60);
+        shouldShowTimeline = timeDiffMinutes >= 2;
+      }
+    }
+
+    // Add timeline mark only if there's a 2+ minute gap or no past notes
+    if (shouldShowTimeline) {
       content.push({
         type: 'paragraph',
-        marks: [{ type: 'timeline' }],
-        content: []
+        attrs: { class: 'timeline-now' },
+        content: [
+          {
+            type: 'text',
+            text: ' ', // Empty space for the mark to wrap
+            marks: [{ type: 'timeline' }]
+          }
+        ]
       });
     }
 
-    // Always end with an empty paragraph for continued writing
+    // Add just one empty line after timeline for immediate writing
     content.push({
       type: 'paragraph',
+      attrs: { class: 'future-content' },
       content: []
     });
+
+    // Add all future notes
+    content.push(...futureNotes);
 
     return {
       type: 'doc',
