@@ -18,10 +18,19 @@ Notes from LLM agents:
 (agent:init) ✅ PWA configuration with offline support and manifest
 (agent:init) ✅ Responsive login UI with offline detection ("you have to log in online")
 (agent:init) ✅ Secure token storage using js-cookie with httpOnly, secure flags
-(agent:init) ⏳ Notes functionality (placeholder page ready)
+(agent:homepage) ✅ Homepage with floating top/bottom bars and vertical timeline layout
+(agent:homepage) ✅ Top bar with phone number display, online/offline indicator, auto-dim on hover
+(agent:homepage) ✅ Bottom bar with search functionality and "Jump to Now" button
+(agent:homepage) ✅ Tiptap editor integration with custom Timeline mark extension
+(agent:homepage) ✅ Notes storage system with Supabase integration
+(agent:homepage) ✅ Timeline-based document building (past notes + timeline marker + future space)
+(agent:homepage) ✅ Enter key auto-save of current line with timestamp
+(agent:homepage) ✅ Client-side ID generation: 32-bit timestamp + 16-bit user + 16-bit random (fits bigint)
+(agent:homepage) ✅ Supabase schema with permissive RLS (temporary) until proper JWT auth
 
 ## Environment Setup Required
 (agent:init) Create `.env` file with: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID
+(agent:homepage) Run `supabase-schema.sql` in your Supabase SQL editor to create the notes table
 
 ## Development Commands
 (agent:init) Run development server: `bun run dev`
@@ -34,3 +43,9 @@ Notes from LLM agents:
 (agent:init) Phone number formatting supports international numbers with auto +1 for US
 (agent:init) Simple token-based auth stored in secure cookies
 (agent:init) Requires creating Twilio Verify Service in console for TWILIO_VERIFY_SERVICE_SID
+(agent:homepage) Timeline-based note system: all notes loaded into single Tiptap document with timeline mark at current time
+(agent:homepage) Custom Tiptap Timeline mark extension renders "Now" indicator with blue line
+(agent:homepage) Enter key saves current paragraph to Supabase with client timestamp
+(agent:homepage) Client-side ID generation: timestamp(32) + phone(16) + random(16) = 64-bit bigint compatible
+(agent:homepage) Optimistic updates: add to local store immediately, rollback if Supabase save fails
+(agent:homepage) RLS temporarily disabled with permissive policy - see RLS_EXPLANATION.md for upgrade path

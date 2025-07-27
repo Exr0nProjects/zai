@@ -12,5 +12,14 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
   auth: {
     persistSession: browser,
     autoRefreshToken: browser
+  },
+  db: {
+    schema: 'public'
   }
-}); 
+});
+
+// Helper function to create a client-side filter for user data
+// Since we're not using proper JWT auth yet, we filter on client-side
+export function createUserFilter(userPhone) {
+  return supabase.from('notes').select('*').eq('user', userPhone);
+} 
