@@ -49,28 +49,29 @@
       ],
       content: notesActions.buildTimelineDocument($notes),
       onUpdate: ({ editor, transaction }) => {
+        console.log('onUpdate', editor.getJSON())
         throttledSaveChanged(editor);
       },
-      editorProps: {
-        handleKeyDown: (view, event) => {
-          const { selection } = view.state;
-          const currentPos = selection.from;
+      // editorProps: {
+      //   handleKeyDown: (view, event) => {
+      //     const { selection } = view.state;
+      //     const currentPos = selection.from;
           
-          // Prevent editing of lines before the timeline
-          if (isBeforeTimeline(currentPos)) {
-            // Allow only navigation keys
-            const allowedKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'];
-            if (!allowedKeys.includes(event.key)) {
-              event.preventDefault();
-              return true;
-            }
-          }
+      //     // // Prevent editing of lines before the timeline
+      //     // if (isBeforeTimeline(currentPos)) {
+      //     //   // Allow only navigation keys
+      //     //   const allowedKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'];
+      //     //   if (!allowedKeys.includes(event.key)) {
+      //     //     event.preventDefault();
+      //     //     return true;
+      //     //   }
+      //     // }
           
-          // Let TipTap handle Enter naturally for proper list behavior
+      //     // Let TipTap handle Enter naturally for proper list behavior
           
-          return false;
-        }
-      }
+      //     return false;
+      //   }
+      // }
     });
     
     // Watch for notes changes and update editor
@@ -82,10 +83,13 @@
         
         // Only update if content actually changed to avoid cursor jumps
         if (JSON.stringify(newContent) !== JSON.stringify(currentContent)) {
-          editor.commands.setContent(newContent);
+          let {from, to} = editor.state.selection;
+          editor.commands.setContent(newContent, { emitUpdate: false, parseOptions: { preserveWhitespace: 'full' } });
+          editor.commands.setTextSelection({from, to}, { emitUpdate: false });
           
           // Only auto-jump on first page load, not on every content update
           if (isFirstLoad) {
+            console.log(editor.getJSON().content)
             isFirstLoad = false;
             setTimeout(() => {
               focusAtTimeline();
@@ -118,18 +122,46 @@
   function throttledSaveChanged(editor) {
     let currentTime = new Date();
     const THROTTLE_DURATION = 1000;
-    if (currentTime - lastSaveTime < THROTTLE_DURATION) {
+    if (currentTime - lastSaveTime > THROTTLE_DURATION) {
       saveChangedToStore(editor);
-    } else {
+      lastSaveTime = currentTime;
+    } else if (saveTimeout === null) {
       saveTimeout = setTimeout(() => {
         saveChangedToStore(editor);
         lastSaveTime = currentTime;
+        saveTimeout = null;
       }, THROTTLE_DURATION - (currentTime - lastSaveTime));
     }
   }
 
   function saveChangedToStore(editor) {
-    
+    const content = editor.getJSON().content;
+
+    let prevTimestamp = null;
+    recursivelySaveContent(content);
+
+    function recursivelySaveContent(content, bulletLevel = -1) {
+      for (const node of content) {
+        if (node.type === 'paragraph') {
+          if (node.attrs?.timestamp && node.attrs.timestamp !== 'now') {
+            prevTimestamp = new Date(node.attrs.timestamp.getTime() + 1); // TODO: breaks if you create two notes from the same one (overlaps)
+          }
+          const note_text = (bulletLevel >= 0 ? '  '.repeat(bulletLevel) + '- ' : '') + (node.content?.[0]?.text || '');
+          if (node.attrs.noteId === null) {
+            console.log('found new note', note_text)
+            notesActions.createNote(note_text, prevTimestamp || new Date()); 
+          } else if (node.attrs.noteId && node.content?.[0]?.text != $notes.get(node.attrs.noteId).contents) {
+            console.log('updated note', node.attrs.noteId, note_text, $notes.get(node.attrs.noteId).contents)
+            notesActions.updateNote(node.attrs.noteId, note_text);
+          }
+        } else if (node.type === 'bulletList' || node.type === 'orderedList') {
+          // TODO: support ordered lists in reverse-parsing
+          for (const listItem of node.content) {
+            recursivelySaveContent(listItem.content, bulletLevel + 1);
+          } 
+        }
+      }
+    }
   }
   
   // Get the node that currently has the cursor
@@ -462,8 +494,6 @@ on:mouseleave={() => topBarHovered = false}
     content: '→';
     position: absolute;
     left: 0.5rem;
-    top: 50%;
-    transform: translateY(-50%);
     font-size: 0.75rem;
     color: rgba(156, 163, 175, 0.8);
     font-family: ui-monospace, 'SF Mono', 'Monaco', 'Cascadia Code', 'Roboto Mono', 'Courier New', monospace;

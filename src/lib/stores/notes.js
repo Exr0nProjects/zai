@@ -6,6 +6,195 @@ import { get } from 'svelte/store';
 export const notes = writable(new Map());
 export const isLoading = writable(false);
 
+// Simple markdown parser for basic formatting with indentation support
+function parseMarkdownContent(text, noteTime) {
+  // Count leading spaces for indentation level
+  const leadingSpaces = text.match(/^( *)/)[1].length;
+  const indentLevel = Math.floor(leadingSpaces / 2); // 2 spaces per level
+  const trimmedText = text
+  
+  // Check if it's a heading
+  const headingMatch = trimmedText.match(/^(#{1,6})\s+(.*)$/);
+  if (headingMatch) {
+    return {
+      type: 'heading',
+      attrs: { level: headingMatch[1].length, timestamp: noteTime },
+      content: parseInlineMarkdown(headingMatch[2])
+    };
+  }
+  
+  // Check if it's a bullet list item
+  const bulletMatch = trimmedText.match(/^[-*+]\s+(.*)$/);
+  if (bulletMatch) {
+    return {
+      type: 'paragraph', // We'll handle list structure in buildTimelineDocument
+      attrs: { 
+        class: 'future-content',  // TODO: or past 
+        timestamp: noteTime,
+        listType: 'bullet',
+        indentLevel: indentLevel
+      },
+      content: parseInlineMarkdown(bulletMatch[1])
+    };
+  }
+  
+  // Check if it's an ordered list item
+  const orderedMatch = trimmedText.match(/^(\d+)\.\s+(.*)$/);
+  if (orderedMatch) {
+    return {
+      type: 'paragraph', // We'll handle list structure in buildTimelineDocument
+      attrs: { 
+        class: 'future-content',
+        listType: 'ordered',
+        timestamp: noteTime,
+        indentLevel: indentLevel
+      },
+      content: parseInlineMarkdown(orderedMatch[2])
+    };
+  }
+  
+  // Regular paragraph (preserve indentation if any)
+  const paragraph = {
+    type: 'paragraph',
+    attrs: { 
+      class: 'future-content',
+      timestamp: noteTime,
+      indentLevel: indentLevel > 0 ? indentLevel : undefined
+    },
+  };
+  const parsedContent = parseInlineMarkdown(trimmedText);
+  if (parsedContent.length > 0) {
+    paragraph.content = parsedContent;
+  }
+  return paragraph;
+}
+
+// Parse inline markdown formatting (bold, italic, code)
+function parseInlineMarkdown(text) {
+  const content = [];
+  let currentIndex = 0;
+  
+  // Regex patterns for markdown formatting
+  const patterns = [
+    { regex: /\*\*(.*?)\*\*/g, mark: 'strong' },
+    { regex: /\*(.*?)\*/g, mark: 'em' },
+    { regex: /`(.*?)`/g, mark: 'code' }
+  ];
+  
+  // Find all matches and their positions
+  const matches = [];
+  patterns.forEach(pattern => {
+    let match;
+    while ((match = pattern.regex.exec(text)) !== null) {
+      matches.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        text: match[1],
+        mark: pattern.mark,
+        fullMatch: match[0]
+      });
+    }
+  });
+  
+  // Sort matches by position
+  matches.sort((a, b) => a.start - b.start);
+  
+  // Process text with formatting
+  matches.forEach(match => {
+    // Add text before the match
+    if (currentIndex < match.start) {
+      const plainText = text.slice(currentIndex, match.start);
+      if (plainText) {
+        content.push({ type: 'text', text: plainText });
+      }
+    }
+    
+    // Add the formatted text
+    if (match.text.length > 0) {
+      content.push({
+        type: 'text',
+        text: match.text,
+        marks: [{ type: match.mark }]
+      });
+    }
+    
+    currentIndex = match.end;
+  });
+  
+  // Add remaining text
+  if (currentIndex < text.length) {
+    const remainingText = text.slice(currentIndex);
+    if (remainingText) {
+      content.push({ type: 'text', text: remainingText });
+    }
+  }
+  
+  // If no formatting was found, return the original text
+  if (content.length === 0 && text.length > 0) {
+    content.push({ type: 'text', text: text });
+  }
+  
+  return content;
+}
+
+// Group consecutive list items into proper TipTap list structures
+function groupListItems(nodeDataArray) {
+  const result = [];
+  let i = 0;
+  
+  while (i < nodeDataArray.length) {
+    const currentNode = nodeDataArray[i];
+    
+    // If this isn't a list item, add it directly
+    if (!currentNode.attrs?.listType) {
+      result.push(currentNode);
+      i++;
+      continue;
+    }
+    
+    // Start building a list
+    const listType = currentNode.attrs.listType;
+    const listNode = {
+      type: listType === 'bullet' ? 'bulletList' : 'orderedList',
+      attrs: {
+        class: currentNode.attrs.class,
+        timestamp: currentNode.attrs.timestamp
+      },
+      content: []
+    };
+    
+    // Collect all consecutive list items of the same type
+    while (i < nodeDataArray.length && 
+           nodeDataArray[i].attrs?.listType === listType) {
+      const listItemNode = nodeDataArray[i];
+      
+      listNode.content.push({
+        type: 'listItem',
+        attrs: {
+          noteId: listItemNode.attrs.noteId
+        },
+        content: [
+          {
+            type: 'paragraph',
+            attrs: {
+              noteId: listItemNode.attrs.noteId,
+              timestamp: listItemNode.attrs.timestamp
+            },
+            content: listItemNode.content
+          }
+        ]
+      });
+      
+      i++;
+    }
+    
+    result.push(listNode);
+  }
+  
+  return result;
+}
+
+
 // Generate client-side ID that fits in PostgreSQL bigint (64-bit signed integer)
 function generateNoteId() {
   const currentUser = get(user);
@@ -67,7 +256,7 @@ export const notesActions = {
     }
   },
 
-  async saveNote(content, timestamp = new Date()) {
+  async createNote(content, timestamp = new Date()) {
     try {
       const currentUser = get(user);
       if (!currentUser?.id) {
@@ -81,7 +270,7 @@ export const notesActions = {
         user_id: currentUser.id, // Use Supabase auth user ID
         created_at: timestamp.toISOString(),
         type: 'md',
-        contents: content.trim()
+        contents: content
       };
 
       // Optimistically add to local store
@@ -109,6 +298,7 @@ export const notesActions = {
         return null;
       }
 
+
       return data;
     } catch (error) {
       console.error('Note saving error:', error);
@@ -124,30 +314,14 @@ export const notesActions = {
         return null;
       }
 
-      // Check if this is a local ID that doesn't exist in DB yet
-      if (noteId.startsWith('local_')) {
-        console.log('🆔 Local ID detected, creating new note in database');
-        // Create a new note with a proper ID
-        const result = await this.saveNote(newContent.trim(), new Date());
-        
-        if (result) {
-          // Update local store to replace the local ID with the real ID
-          notes.update(currentNotes => {
-            const newNotes = new Map(currentNotes);
-            newNotes.delete(noteId); // Remove old local ID
-            newNotes.set(result.id, result); // Add with real ID
-            return newNotes;
-          });
-        }
-        return result;
-      }
-
       // Update in local store first (preserve original timestamp)
       notes.update(currentNotes => {
         const newNotes = new Map(currentNotes);
         const existingNote = newNotes.get(noteId);
         if (existingNote) {
-          newNotes.set(noteId, { ...existingNote, contents: newContent.trim() });
+          newNotes.set(noteId, { ...existingNote, contents: newContent });
+        } else {
+          console.warn('Note not found in local store:', noteId);
         }
         return newNotes;
       });
@@ -156,7 +330,7 @@ export const notesActions = {
       const { data, error } = await supabase
         .from('notes')
         .update({ 
-          contents: newContent.trim()
+          contents: newContent
           // Deliberately NOT updating created_at to preserve original timestamp
         })
         .eq('id', noteId)
@@ -189,17 +363,7 @@ export const notesActions = {
         content: [
           {
             type: 'paragraph',
-            attrs: { class: 'past-content' },
-            content: [
-              {
-                type: 'text',
-                text: 'Start writing your thoughts...'
-              }
-            ]
-          },
-          {
-            type: 'paragraph',
-            attrs: { class: 'timeline-now' },
+            attrs: { class: 'timeline-now', timestamp: 'now' },
             content: [
               {
                 type: 'text',
@@ -208,11 +372,6 @@ export const notesActions = {
               }
             ]
           },
-          {
-            type: 'paragraph',
-            attrs: { class: 'future-content' },
-            content: []
-          }
         ]
       };
     }
@@ -230,34 +389,24 @@ export const notesActions = {
     for (const note of sortedNotes) {
       const noteTime = new Date(note.created_at);
       
-      if (note.contents.trim()) {
-        const timeStr = noteTime.toLocaleTimeString('en-US', { 
-          hour: '2-digit', 
-          minute: '2-digit',
-          hour12: false 
-        });
-        
-        // Parse markdown content into Tiptap format
-        const parsedContent = parseMarkdownContent(note.contents.trim());
-        
-        const nodeData = {
-          type: parsedContent.type || 'paragraph',
-          attrs: {
-            timestamp: timeStr,
-            noteId: note.id,
-            class: noteTime <= currentTime ? 'past-content' : 'future-content',
-            ...(parsedContent.attrs || {})
-          },
-          content: parsedContent.content
-        };
-        
-
-        
-        if (noteTime <= currentTime) {
-          pastNotes.push(nodeData);
-        } else {
-          futureNotes.push(nodeData);
-        }
+      // Parse markdown content into Tiptap format
+      const parsedContent = parseMarkdownContent(note.contents, noteTime);
+      
+      const nodeData = {
+        type: parsedContent.type || 'paragraph',
+        attrs: {
+          timestamp: noteTime,
+          noteId: note.id,
+          class: noteTime <= currentTime ? 'past-content' : 'future-content',
+          ...(parsedContent.attrs || {})
+        },
+        content: parsedContent.content
+      };
+      
+      if (noteTime <= currentTime) {
+        pastNotes.push(nodeData);
+      } else {
+        futureNotes.push(nodeData);
       }
     }
 
@@ -295,12 +444,12 @@ export const notesActions = {
       });
     }
 
-    // Add just one empty line after timeline for immediate writing
-    content.push({
-      type: 'paragraph',
-      attrs: { class: 'future-content' },
-      content: []
-    });
+    // // Add just one empty line after timeline for immediate writing
+    // content.push({
+    //   type: 'paragraph',
+    //   attrs: { class: 'future-content' },
+    //   content: []
+    // });
 
     // Group list items and add all future notes
     const groupedFutureNotes = groupListItems(futureNotes);

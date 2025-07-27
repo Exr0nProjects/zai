@@ -1,5 +1,6 @@
 import { Node } from '@tiptap/core';
 import { mergeAttributes } from '@tiptap/core';
+import { formatTime } from '$lib/utils/format';
 
 export const CustomHeading = Node.create({
   name: 'heading',
@@ -33,12 +34,13 @@ export const CustomHeading = Node.create({
             return {}
           }
           return {
-            'data-timestamp': attributes.timestamp,
+            'data-timestamp': formatTime(attributes.timestamp),
           }
         },
       },
       noteId: {
         default: null,
+        keepOnSplit: false,
         parseHTML: element => element.getAttribute('data-note-id'),
         renderHTML: attributes => {
           if (!attributes.noteId) {

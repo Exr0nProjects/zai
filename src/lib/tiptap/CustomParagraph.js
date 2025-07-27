@@ -1,5 +1,6 @@
 import { Node } from '@tiptap/core';
 import { mergeAttributes } from '@tiptap/core';
+import { formatTime } from '$lib/utils/format';
 
 export const CustomParagraph = Node.create({
   name: 'paragraph',
@@ -9,6 +10,8 @@ export const CustomParagraph = Node.create({
   group: 'block',
   
   content: 'inline*',
+
+  defining: true,
   
   parseHTML() {
     return [{ tag: 'p' }]
@@ -22,18 +25,20 @@ export const CustomParagraph = Node.create({
     return {
       timestamp: {
         default: null,
+        keepOnSplit: true,
         parseHTML: element => element.getAttribute('data-timestamp'),
         renderHTML: attributes => {
           if (!attributes.timestamp) {
             return {}
           }
           return {
-            'data-timestamp': attributes.timestamp,
+            'data-timestamp': formatTime(attributes.timestamp),
           }
         },
       },
       noteId: {
         default: null,
+        keepOnSplit: false,
         parseHTML: element => element.getAttribute('data-note-id'),
         renderHTML: attributes => {
           if (!attributes.noteId) {
