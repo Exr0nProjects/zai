@@ -42,9 +42,17 @@ Notes from LLM agents:
 (agent:homepage) **JWT Tokens**: Proper Supabase JWT with auth.uid() for RLS integration
 (agent:homepage) **RLS**: Simple policy `auth.uid() = user_id` - database-level security working perfectly
 (agent:homepage) **Session Management**: Automatic with `onAuthStateChange()` - handles refresh/expiry
+(agent:simplify-saving) **Simplified Saving**: Each paragraph = one database note with data-note-id attribute
+(agent:simplify-saving) Document comparison detects changes: compare current vs previous document state
+(agent:simplify-saving) Auto-save with 1-second debounce: only saves paragraphs that actually changed
+(agent:simplify-saving) Timeline gutter shows timestamps via CSS data-timestamp attributes
+(agent:simplify-saving) New content detection: paragraphs without note IDs become new notes
+(agent:save-while-typing) **Real-time Conflict Prevention**: Tracks currently editing note ID to prevent Supabase real-time updates from clobbering typed content
+(agent:save-while-typing) Document builder preserves current editor content for paragraphs being typed in, using database content for others
+(agent:save-while-typing) Real-time subscriptions filter out updates to currently editing paragraphs to prevent race conditions
 (agent:homepage) Timeline-based note system: all notes loaded into single Tiptap document with timeline mark at current time
 (agent:homepage) Custom Tiptap Timeline mark extension renders "Now" indicator with blue line
-(agent:homepage) Enter key saves current paragraph to Supabase with client timestamp
 (agent:homepage) Client-side ID generation: timestamp(32) + phone(16) + random(16) = 64-bit bigint compatible
 (agent:homepage) Optimistic updates: add to local store immediately, rollback if Supabase save fails
 (agent:homepage) **Code Reduction**: ~200 lines of custom auth → ~50 lines with Supabase Auth
+(agent:simplify-saving) **Code Simplification**: Removed complex transaction tracking, node modification detection, and cursor management (~400 lines → ~150 lines)

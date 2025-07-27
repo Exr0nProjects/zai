@@ -5,181 +5,11 @@ import { get } from 'svelte/store';
 
 export const notes = writable([]);
 export const isLoading = writable(false);
+// Track which note ID is currently being edited to prevent clobbering
+export const currentlyEditingNoteId = writable(null);
 
-// Simple markdown parser for basic formatting with indentation support
-function parseMarkdownContent(text) {
-  // Count leading spaces for indentation level
-  const leadingSpaces = text.match(/^( *)/)[1].length;
-  const indentLevel = Math.floor(leadingSpaces / 2); // 2 spaces per level
-  const trimmedText = text.trim();
-  
-  // Check if it's a heading
-  const headingMatch = trimmedText.match(/^(#{1,6})\s+(.*)$/);
-  if (headingMatch) {
-    return {
-      type: 'heading',
-      attrs: { level: headingMatch[1].length },
-      content: parseInlineMarkdown(headingMatch[2])
-    };
-  }
-  
-  // Check if it's a bullet list item
-  const bulletMatch = trimmedText.match(/^[-*+]\s+(.*)$/);
-  if (bulletMatch) {
-    return {
-      type: 'paragraph', // We'll handle list structure in buildTimelineDocument
-      attrs: { 
-        class: 'future-content',
-        listType: 'bullet',
-        indentLevel: indentLevel
-      },
-      content: parseInlineMarkdown(bulletMatch[1])
-    };
-  }
-  
-  // Check if it's an ordered list item
-  const orderedMatch = trimmedText.match(/^(\d+)\.\s+(.*)$/);
-  if (orderedMatch) {
-    return {
-      type: 'paragraph', // We'll handle list structure in buildTimelineDocument
-      attrs: { 
-        class: 'future-content',
-        listType: 'ordered',
-        indentLevel: indentLevel
-      },
-      content: parseInlineMarkdown(orderedMatch[2])
-    };
-  }
-  
-  // Regular paragraph (preserve indentation if any)
-  return {
-    type: 'paragraph',
-    attrs: { 
-      class: 'future-content',
-      indentLevel: indentLevel > 0 ? indentLevel : undefined
-    },
-    content: parseInlineMarkdown(trimmedText)
-  };
-}
-
-// Parse inline markdown formatting (bold, italic, code)
-function parseInlineMarkdown(text) {
-  const content = [];
-  let currentIndex = 0;
-  
-  // Regex patterns for markdown formatting
-  const patterns = [
-    { regex: /\*\*(.*?)\*\*/g, mark: 'strong' },
-    { regex: /\*(.*?)\*/g, mark: 'em' },
-    { regex: /`(.*?)`/g, mark: 'code' }
-  ];
-  
-  // Find all matches and their positions
-  const matches = [];
-  patterns.forEach(pattern => {
-    let match;
-    while ((match = pattern.regex.exec(text)) !== null) {
-      matches.push({
-        start: match.index,
-        end: match.index + match[0].length,
-        text: match[1],
-        mark: pattern.mark,
-        fullMatch: match[0]
-      });
-    }
-  });
-  
-  // Sort matches by position
-  matches.sort((a, b) => a.start - b.start);
-  
-  // Process text with formatting
-  matches.forEach(match => {
-    // Add text before the match
-    if (currentIndex < match.start) {
-      const plainText = text.slice(currentIndex, match.start);
-      if (plainText) {
-        content.push({ type: 'text', text: plainText });
-      }
-    }
-    
-    // Add the formatted text
-    content.push({
-      type: 'text',
-      text: match.text,
-      marks: [{ type: match.mark }]
-    });
-    
-    currentIndex = match.end;
-  });
-  
-  // Add remaining text
-  if (currentIndex < text.length) {
-    const remainingText = text.slice(currentIndex);
-    if (remainingText) {
-      content.push({ type: 'text', text: remainingText });
-    }
-  }
-  
-  // If no formatting was found, return the original text
-  if (content.length === 0) {
-    content.push({ type: 'text', text: text });
-  }
-  
-  return content;
-}
-
-// Group consecutive list items into proper TipTap list structures
-function groupListItems(nodeDataArray) {
-  const result = [];
-  let i = 0;
-  
-  while (i < nodeDataArray.length) {
-    const currentNode = nodeDataArray[i];
-    
-    // If this isn't a list item, add it directly
-    if (!currentNode.attrs?.listType) {
-      result.push(currentNode);
-      i++;
-      continue;
-    }
-    
-    // Start building a list
-    const listType = currentNode.attrs.listType;
-    const listNode = {
-      type: listType === 'bullet' ? 'bulletList' : 'orderedList',
-      attrs: {
-        class: currentNode.attrs.class,
-        timestamp: currentNode.attrs.timestamp
-      },
-      content: []
-    };
-    
-    // Collect all consecutive list items of the same type
-    while (i < nodeDataArray.length && 
-           nodeDataArray[i].attrs?.listType === listType) {
-      const listItemNode = nodeDataArray[i];
-      
-      listNode.content.push({
-        type: 'listItem',
-        attrs: {
-          noteId: listItemNode.attrs.noteId
-        },
-        content: [
-          {
-            type: 'paragraph',
-            content: listItemNode.content
-          }
-        ]
-      });
-      
-      i++;
-    }
-    
-    result.push(listNode);
-  }
-  
-  return result;
-}
+// Real-time subscription channel
+let realtimeChannel = null;
 
 // Generate client-side ID that fits in PostgreSQL bigint (64-bit signed integer)
 function generateNoteId() {
@@ -209,8 +39,9 @@ export const notesActions = {
     isLoading.set(true);
     try {
       const currentUser = get(user);
+      
       if (!currentUser?.id) {
-        console.warn('No user ID available');
+        console.warn('No user ID available for loading notes');
         notes.set([]);
         return;
       }
@@ -237,6 +68,82 @@ export const notesActions = {
     }
   },
 
+  // Track which note is currently being edited
+  setCurrentlyEditing(noteId) {
+    currentlyEditingNoteId.set(noteId);
+  },
+
+  clearCurrentlyEditing() {
+    currentlyEditingNoteId.set(null);
+  },
+
+  // Set up real-time subscription for notes
+  async setupRealtimeSubscription() {
+    const currentUser = get(user);
+    if (!currentUser?.id) {
+      console.warn('No user available for real-time subscription');
+      return;
+    }
+
+    // Clean up existing subscription
+    if (realtimeChannel) {
+      await supabase.removeChannel(realtimeChannel);
+    }
+
+    // Create new subscription for this user's notes
+    realtimeChannel = supabase
+      .channel('notes-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notes',
+          filter: `user_id=eq.${currentUser.id}`
+        },
+        (payload) => {
+          const editingNoteId = get(currentlyEditingNoteId);
+          
+          // Handle different types of changes
+          if (payload.eventType === 'INSERT') {
+            // Only add if it's not the note currently being edited (avoid duplicates from our own saves)
+            if (payload.new.id !== editingNoteId) {
+              notes.update(currentNotes => {
+                // Check if note already exists (to avoid duplicates)
+                const exists = currentNotes.some(note => note.id === payload.new.id);
+                if (!exists) {
+                  return [...currentNotes, payload.new];
+                }
+                return currentNotes;
+              });
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            // Only update if it's not the note currently being edited
+            if (payload.new.id !== editingNoteId) {
+              notes.update(currentNotes =>
+                currentNotes.map(note =>
+                  note.id === payload.new.id ? payload.new : note
+                )
+              );
+            }
+          } else if (payload.eventType === 'DELETE') {
+            notes.update(currentNotes =>
+              currentNotes.filter(note => note.id !== payload.old.id)
+            );
+          }
+        }
+      )
+      .subscribe();
+  },
+
+  // Clean up real-time subscription
+  async cleanupRealtimeSubscription() {
+    if (realtimeChannel) {
+      await supabase.removeChannel(realtimeChannel);
+      realtimeChannel = null;
+    }
+  },
+
   async saveNote(content, timestamp = new Date()) {
     try {
       const currentUser = get(user);
@@ -248,7 +155,7 @@ export const notesActions = {
       const noteId = generateNoteId();
       const note = {
         id: noteId,
-        user_id: currentUser.id, // Use Supabase auth user ID
+        user_id: currentUser.id,
         created_at: timestamp.toISOString(),
         type: 'md',
         contents: content.trim()
@@ -257,7 +164,7 @@ export const notesActions = {
       // Optimistically add to local store
       notes.update(currentNotes => [...currentNotes, note]);
 
-      // Try to save to database - RLS will automatically filter by auth.uid()
+      // Try to save to database
       const { data, error } = await supabase
         .from('notes')
         .insert([note])
@@ -288,25 +195,6 @@ export const notesActions = {
         return null;
       }
 
-      // Check if this is a local ID that doesn't exist in DB yet
-      if (noteId.startsWith('local_')) {
-        console.log('🆔 Local ID detected, creating new note in database');
-        // Create a new note with a proper ID
-        const result = await this.saveNote(newContent.trim(), new Date());
-        
-        if (result) {
-          // Update local store to replace the local ID with the real ID
-          notes.update(currentNotes => 
-            currentNotes.map(note => 
-              note.id === noteId 
-                ? { ...result } // Replace with the saved note data
-                : note
-            )
-          );
-        }
-        return result;
-      }
-
       // Update in local store first (preserve original timestamp)
       notes.update(currentNotes => 
         currentNotes.map(note => 
@@ -321,10 +209,9 @@ export const notesActions = {
         .from('notes')
         .update({ 
           contents: newContent.trim()
-          // Deliberately NOT updating created_at to preserve original timestamp
         })
         .eq('id', noteId)
-        .eq('user_id', currentUser.id) // Ensure user can only update their own notes
+        .eq('user_id', currentUser.id)
         .select()
         .single();
 
@@ -342,29 +229,22 @@ export const notesActions = {
     }
   },
 
-  // Combine all notes into a single document for Tiptap
-  buildTimelineDocument(notesArray, currentTime = new Date()) {
+  // Simple document builder: each note = one paragraph with data-note-id
+  // currentEditorContent: object mapping noteId -> current content in editor (to preserve while typing)
+  buildTimelineDocument(notesArray, currentTime = new Date(), currentEditorContent = {}) {
+    const editingNoteId = get(currentlyEditingNoteId);
+    
     if (!notesArray?.length) {
       return {
         type: 'doc',
         content: [
           {
             type: 'paragraph',
-            attrs: { class: 'past-content' },
-            content: [
-              {
-                type: 'text',
-                text: 'Start writing your thoughts...'
-              }
-            ]
-          },
-          {
-            type: 'paragraph',
             attrs: { class: 'timeline-now' },
             content: [
               {
                 type: 'text',
-                text: '​', // Empty space for the mark to wrap
+                text: '​', // Zero-width space for timeline mark
                 marks: [{ type: 'timeline' }]
               }
             ]
@@ -384,88 +264,74 @@ export const notesActions = {
 
     const content = [];
     let timelineInserted = false;
-    let pastNotes = [];
-    let futureNotes = [];
 
-    // Separate notes into past and future
     for (const note of sortedNotes) {
       const noteTime = new Date(note.created_at);
-      
-      if (note.contents.trim()) {
-        const timeStr = noteTime.toLocaleTimeString('en-US', { 
-          hour: '2-digit', 
-          minute: '2-digit',
-          hour12: false 
+      const timeStr = noteTime.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false 
+      });
+
+      // Insert timeline mark before first future note
+      if (!timelineInserted && noteTime > currentTime) {
+        content.push({
+          type: 'paragraph',
+          attrs: { class: 'timeline-now' },
+          content: [
+            {
+              type: 'text',
+              text: '​', // Zero-width space for timeline mark
+              marks: [{ type: 'timeline' }]
+            }
+          ]
         });
-        
-        // Parse markdown content into Tiptap format
-        const parsedContent = parseMarkdownContent(note.contents.trim());
-        
-        const nodeData = {
-          type: parsedContent.type || 'paragraph',
-          attrs: {
-            timestamp: timeStr,
-            noteId: note.id,
-            class: noteTime <= currentTime ? 'past-content' : 'future-content',
-            ...(parsedContent.attrs || {})
-          },
-          content: parsedContent.content
-        };
-        
-
-        
-        if (noteTime <= currentTime) {
-          pastNotes.push(nodeData);
-        } else {
-          futureNotes.push(nodeData);
-        }
+        timelineInserted = true;
       }
+
+      // Use current editor content if this note is being edited, otherwise use database content
+      const noteContent = (editingNoteId === note.id && currentEditorContent[note.id] !== undefined) 
+        ? currentEditorContent[note.id] 
+        : note.contents.trim();
+
+      // Add note as simple paragraph
+      content.push({
+        type: 'paragraph',
+        attrs: {
+          noteId: note.id,
+          timestamp: timeStr,
+          class: noteTime <= currentTime ? 'past-content' : 'future-content'
+        },
+        content: noteContent ? [
+          {
+            type: 'text', 
+            text: noteContent
+          }
+        ] : []
+      });
     }
 
-    // Group list items and add all past notes
-    const groupedPastNotes = groupListItems(pastNotes);
-    content.push(...groupedPastNotes);
-
-    // Check if we should show the timeline mark (only if 2+ minutes from last note)
-    let shouldShowTimeline = true;
-    if (pastNotes.length > 0) {
-      // Get the most recent past note's timestamp
-      const lastNote = sortedNotes.filter(note => 
-        new Date(note.created_at) <= currentTime && note.contents.trim()
-      ).pop();
-      
-      if (lastNote) {
-        const lastNoteTime = new Date(lastNote.created_at);
-        const timeDiffMinutes = (currentTime - lastNoteTime) / (1000 * 60);
-        shouldShowTimeline = timeDiffMinutes >= 2;
-      }
-    }
-
-    // Add timeline mark only if there's a 2+ minute gap or no past notes
-    if (shouldShowTimeline) {
+    // If no future notes, add timeline at end
+    if (!timelineInserted) {
       content.push({
         type: 'paragraph',
         attrs: { class: 'timeline-now' },
         content: [
           {
             type: 'text',
-            text: ' ', // Empty space for the mark to wrap
+            text: '​', // Zero-width space for timeline mark
             marks: [{ type: 'timeline' }]
           }
         ]
       });
     }
 
-    // Add just one empty line after timeline for immediate writing
+    // Add empty paragraph for new content
     content.push({
       type: 'paragraph',
       attrs: { class: 'future-content' },
       content: []
     });
-
-    // Group list items and add all future notes
-    const groupedFutureNotes = groupListItems(futureNotes);
-    content.push(...groupedFutureNotes);
 
     return {
       type: 'doc',

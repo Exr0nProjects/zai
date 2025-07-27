@@ -1,14 +1,14 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-            import { Editor } from '@tiptap/core';
-          import StarterKit from '@tiptap/starter-kit';
-          import Placeholder from '@tiptap/extension-placeholder';
-          import { user, authActions } from '$lib/stores/auth.js';
-          import { checkOnlineStatus } from '$lib/utils/auth.js';
-          import { notes, notesActions, isLoading } from '$lib/stores/notes.js';
-          import { TimelineMark } from '$lib/tiptap/TimelineMark.js';
-          import { CustomParagraph } from '$lib/tiptap/CustomParagraph.js';
-          import { CustomHeading } from '$lib/tiptap/CustomHeading.js';
+  import { Editor } from '@tiptap/core';
+  import StarterKit from '@tiptap/starter-kit';
+  import Placeholder from '@tiptap/extension-placeholder';
+  import { user, authActions } from '$lib/stores/auth.js';
+  import { checkOnlineStatus } from '$lib/utils/auth.js';
+  import { notes, notesActions, isLoading, currentlyEditingNoteId } from '$lib/stores/notes.js';
+  import { TimelineMark } from '$lib/tiptap/TimelineMark.js';
+  import { CustomParagraph } from '$lib/tiptap/CustomParagraph.js';
+  import { CustomHeading } from '$lib/tiptap/CustomHeading.js';
   
   let isOnline = true;
   let topBarHovered = false;
@@ -16,7 +16,7 @@
   let editor;
   let element;
   let saveTimeout;
-  let lastSavedContent = null;
+  let previousDocumentState = null; // Store previous document state for comparison
   
   onMount(async () => {
     // Check online status
@@ -31,28 +31,48 @@
     // Load notes from Supabase
     await notesActions.loadNotes();
     
-                // Initialize Tiptap editor
-            editor = new Editor({
-              element: element,
-              extensions: [
-                StarterKit.configure({
-                  // Disable default paragraph and heading to use our custom ones
-                  paragraph: false,
-                  heading: false,
-                }),
-                CustomParagraph,
-                CustomHeading,
-                TimelineMark,
-                Placeholder.configure({
-                  placeholder: 'Start writing your thoughts...',
-                }),
-              ],
+    // Set up real-time subscription for live updates
+    await notesActions.setupRealtimeSubscription();
+    
+    // Initialize Tiptap editor
+    editor = new Editor({
+      element: element,
+      extensions: [
+        StarterKit.configure({
+          paragraph: false,
+          heading: false,
+        }),
+        CustomParagraph,
+        CustomHeading,
+        TimelineMark,
+        Placeholder.configure({
+          placeholder: 'Start writing your thoughts...',
+        }),
+      ],
       content: notesActions.buildTimelineDocument($notes),
       onUpdate: ({ editor, transaction }) => {
         // Only save if this was a user edit (not a programmatic change)
         if (transaction.docChanged && !transaction.getMeta('preventUpdate')) {
-          console.log('✅ Content changed, scheduling save...');
-          debouncedSave();
+          throttledSave();
+        }
+      },
+      onSelectionUpdate: ({ editor }) => {
+        // Track which paragraph the user is currently in
+        const { selection } = editor.state;
+        const currentPos = selection.from;
+        
+        // Find the paragraph node at the current position
+        const currentParagraph = editor.state.doc.nodeAt(currentPos) || 
+                                editor.state.doc.resolve(currentPos).parent;
+        
+        if (currentParagraph && currentParagraph.type.name === 'paragraph') {
+          const noteId = currentParagraph.attrs.noteId;
+          if (noteId && noteId !== $currentlyEditingNoteId) {
+            notesActions.setCurrentlyEditing(noteId);
+          } else if (!noteId && $currentlyEditingNoteId) {
+            // User moved to a paragraph without a note ID (new content area)
+            notesActions.clearCurrentlyEditing();
+          }
         }
       },
       editorProps: {
@@ -70,38 +90,32 @@
             }
           }
           
-                            // Let TipTap handle Enter naturally for proper list behavior
-          
           return false;
         }
       }
     });
 
-                // Watch for notes changes and update editor
-            let isFirstLoad = true;
-            const unsubscribe = notes.subscribe((currentNotes) => {
-              if (editor && !$isLoading) {
-                console.log('📄 Notes subscription triggered, rebuilding content');
-                const newContent = notesActions.buildTimelineDocument(currentNotes);
-                const currentContent = editor.getJSON();
-
-                // Only update if content actually changed to avoid cursor jumps
-                if (JSON.stringify(newContent) !== JSON.stringify(currentContent)) {
-                  console.log('🔄 Content changed, updating editor');
-                  editor.commands.setContent(newContent);
-                  
-                  // Only auto-jump on first page load, not on every content update
-                  if (isFirstLoad) {
-                    isFirstLoad = false;
-                    setTimeout(() => {
-                      focusAtTimeline();
-                    }, 200);
-                  }
-                } else {
-                  console.log('⏸️ Content unchanged, skipping editor update');
-                }
-              }
-            });
+    // Watch for notes changes and update editor
+    let isFirstLoad = true;
+    const unsubscribe = notes.subscribe((currentNotes) => {
+      if (editor && !$isLoading) {
+        // Get current editor content to preserve while typing
+        const currentEditorContent = getCurrentDocumentState();
+        const newContent = notesActions.buildTimelineDocument(currentNotes, new Date(), currentEditorContent);
+        
+        // Update editor content and store current state
+        editor.commands.setContent(newContent, false, { preventUpdate: true });
+        previousDocumentState = getCurrentDocumentState();
+        
+        // Only auto-jump on first page load
+        if (isFirstLoad) {
+          isFirstLoad = false;
+          setTimeout(() => {
+            focusAtTimeline();
+          }, 200);
+        }
+      }
+    });
 
     return () => {
       unsubscribe();
@@ -115,327 +129,191 @@
     if (editor) {
       editor.destroy();
     }
+    // Clean up real-time subscription
+    notesActions.cleanupRealtimeSubscription();
   });
   
   function handleSearch() {
     if (searchQuery.trim()) {
-      // TODO: Implement search within editor content
-      console.log('Searching for:', searchQuery);
+      // TODO: Implement search functionality
     }
   }
   
-  // Track which nodes were modified in a transaction
-  function trackModifiedNodes(transaction) {
-    console.log('🔄 trackModifiedNodes called, steps:', transaction.steps.length);
-    transaction.steps.forEach((step, stepIndex) => {
-      if (step.from !== undefined && step.to !== undefined) {
-        console.log(`📝 Processing step ${stepIndex}: from ${step.from} to ${step.to}`);
-        // Find nodes that were affected by this step
-        const doc = transaction.docs[stepIndex] || transaction.doc;
-        doc.nodesBetween(step.from, step.to, (node, pos) => {
-          if (shouldTrackNode(node)) {
-            console.log(`✅ Tracking node at pos ${pos}:`, node.type.name, node.textContent?.slice(0, 50));
-            modifiedNodes.set(pos, { node, pos });
-          }
-        });
+  // Get current document state for comparison
+  function getCurrentDocumentState() {
+    if (!editor) return {};
+    
+    const state = {};
+    const doc = editor.state.doc;
+    
+    doc.descendants((node, pos) => {
+      if (node.type.name === 'paragraph') {
+        const noteId = node.attrs.noteId;
+        if (noteId) {
+          state[noteId] = node.textContent || '';
+        }
       }
     });
-    console.log(`📊 Total modified nodes tracked: ${modifiedNodes.size}`);
+    
+    return state;
   }
   
-  // Check if a node should be tracked for saving
-  function shouldTrackNode(node) {
-    console.log(`🔍 shouldTrackNode: ${node.type.name}, attrs:`, node.attrs, 'text:', node.textContent?.slice(0, 30));
+  // Find changed paragraphs by comparing document states
+  function findChangedParagraphs() {
+    const currentState = getCurrentDocumentState();
     
-    if (!node.attrs) {
-      console.log('❌ No attrs, skipping');
-      return false;
+    if (!previousDocumentState) {
+      previousDocumentState = currentState;
+      return [];
     }
     
-    // Only track paragraphs and headings with future content
-    if (node.type.name !== 'paragraph' && node.type.name !== 'heading') {
-      console.log(`❌ Wrong type (${node.type.name}), skipping`);
-      return false;
+    const changes = [];
+    
+    // Check for changed content
+    for (const [noteId, content] of Object.entries(currentState)) {
+      if (previousDocumentState[noteId] !== content) {
+        changes.push({ noteId, content });
+      }
     }
     
-    // Skip empty content
-    if (!node.textContent?.trim()) {
-      console.log(`❌ Empty content, skipping`);
-      return false;
-    }
-    
-    // Skip timeline marker with only the timeline symbol (​)
-    if (node.attrs.class === 'timeline-now' && node.textContent === '​') {
-      console.log(`❌ Timeline marker only, skipping`);
-      return false;
-    }
-    
-    // Track future content OR timeline content with actual text
-    const shouldTrack = node.attrs.class === 'future-content' || 
-                       (node.attrs.class === 'timeline-now' && node.textContent.length > 1);
-    console.log(`${shouldTrack ? '✅' : '❌'} Should track: ${shouldTrack} (class: ${node.attrs.class}, text: "${node.textContent?.slice(0, 20)}")`);
-    return shouldTrack;
+    return changes;
   }
   
-  // Throttled save function - saves at most once per second
+  // Throttled save function - saves at most once per second while typing
+  let lastSaveTime = 0;
   function throttledSave() {
     const now = Date.now();
     const timeSinceLastSave = now - lastSaveTime;
-    const throttleInterval = 1000; // 1 second throttle
-    
-    console.log(`⏱️ throttledSave called. Time since last save: ${timeSinceLastSave}ms`);
+    const throttleInterval = 1000; // 1 second
     
     if (timeSinceLastSave >= throttleInterval) {
       // Enough time has passed, save immediately
-      console.log('💾 Saving immediately (throttle period expired)');
-      saveModifiedNodes();
+      saveChangedParagraphs();
       lastSaveTime = now;
     } else {
       // Not enough time has passed, schedule save for when throttle period expires
       if (saveTimeout) {
-        console.log('🔄 Clearing existing save timeout');
         clearTimeout(saveTimeout);
       }
       
       const remainingTime = throttleInterval - timeSinceLastSave;
-      console.log(`⏳ Scheduling save in ${remainingTime}ms`);
-      saveTimeout = setTimeout(async () => {
-        console.log('💾 Executing scheduled save');
-        await saveModifiedNodes();
+      saveTimeout = setTimeout(() => {
+        saveChangedParagraphs();
         lastSaveTime = Date.now();
       }, remainingTime);
     }
   }
   
-  // Get the node that currently has the cursor
-  function getCurrentCursorNodeId() {
-    if (!editor) return null;
+  // Save only the paragraphs that changed
+  async function saveChangedParagraphs() {
+    const changes = findChangedParagraphs();
     
-    const { selection } = editor.state;
-    const pos = selection.from;
-    const resolvedPos = editor.state.doc.resolve(pos);
-    const currentNode = resolvedPos.parent;
+    // Also check for new content in paragraphs without note IDs
+    const newContent = findNewContent();
     
-    return currentNode?.attrs?.noteId || null;
-  }
-
-  // Save only the nodes that were actually modified (excluding the one with cursor)
-  async function saveModifiedNodes() {
-    console.log(`💾 saveModifiedNodes called. Modified nodes: ${modifiedNodes.size}`);
-    
-    if (!editor || modifiedNodes.size === 0) {
-      console.log('❌ No editor or no modified nodes, skipping save');
+    if (changes.length === 0 && newContent.length === 0) {
       return;
     }
     
-    const currentCursorNodeId = getCurrentCursorNodeId();
-    console.log(`👆 Current cursor node ID: ${currentCursorNodeId}`);
-    
-    const nodesToSave = Array.from(modifiedNodes.values()).filter(({ node }) => {
-      const shouldSave = node.attrs?.noteId !== currentCursorNodeId;
-      if (!shouldSave) {
-        console.log(`⏭️ Skipping node with cursor: ${node.attrs?.noteId}`);
-      }
-      return shouldSave;
-    });
-    
-    // Only clear nodes that we're about to save, keep the cursor node for later
-    const savedNodeIds = new Set(nodesToSave.map(({ node }) => node.attrs?.noteId));
-    for (const [pos, { node }] of modifiedNodes.entries()) {
-      if (savedNodeIds.has(node.attrs?.noteId)) {
-        modifiedNodes.delete(pos);
+    // Save changed existing paragraphs
+    for (const { noteId, content } of changes) {
+      if (content.trim()) {
+        // Update existing note
+        await notesActions.updateNote(noteId, content);
+        // Clear editing state after successful save
+        if ($currentlyEditingNoteId === noteId) {
+          notesActions.clearCurrentlyEditing();
+        }
       }
     }
     
-    console.log(`📝 Processing ${nodesToSave.length} nodes for saving (${modifiedNodes.size} kept for later)`);
-    
-    for (const { node, pos } of nodesToSave) {
-      const contentData = extractNodeContent(node, pos);
-      if (contentData) {
-        console.log(`💾 Saving content: "${contentData.markdown}" (noteId: ${contentData.noteId})`);
-        
-        // Always update since all nodes now have IDs
-        const result = await notesActions.updateNote(contentData.noteId, contentData.markdown);
-        console.log('🔄 Update result:', result ? 'success' : 'failed');
-      } else {
-        console.log('❌ No content data extracted for node');
+    // Save new content as new notes
+    for (const { content } of newContent) {
+      if (content.trim()) {
+        await notesActions.saveNote(content);
       }
     }
     
-    console.log('✅ saveModifiedNodes completed');
+    // Update our stored state
+    previousDocumentState = getCurrentDocumentState();
   }
   
-  // Determine appropriate timestamp for new nodes
-  function getTimestampForNewNode(node, pos) {
-    // For timeline-now content, always use current time
-    if (node.attrs?.class === 'timeline-now') {
-      console.log('📅 Using current time for timeline-now node');
-      return new Date();
-    }
+  // Find new content in paragraphs without note IDs
+  function findNewContent() {
+    if (!editor) return [];
     
-    // For other nodes, try to inherit timestamp from a nearby sibling
+    const newContent = [];
     const doc = editor.state.doc;
-    let parentTimestamp = null;
     
-    // Look for previous sibling with a timestamp
-    doc.descendants((sibling, siblingPos) => {
-      if (siblingPos < pos && sibling.attrs?.timestamp && sibling.attrs?.noteId) {
-        parentTimestamp = sibling.attrs.timestamp;
-        console.log(`📅 Found sibling timestamp: ${parentTimestamp} at pos ${siblingPos}`);
+    doc.descendants((node, pos) => {
+      if (node.type.name === 'paragraph' && !node.attrs.noteId) {
+        // Check for future-content paragraphs with content
+        if (node.attrs.class === 'future-content' && node.textContent?.trim()) {
+          newContent.push({ content: node.textContent });
+        }
+        // Check for timeline paragraphs with actual content (more than just zero-width space)
+        else if (node.attrs.class === 'timeline-now' && node.textContent?.length > 1) {
+          // Extract content after the zero-width space
+          const content = node.textContent.substring(1).trim(); // Remove zero-width space
+          if (content) {
+            newContent.push({ content });
+          }
+        }
       }
     });
     
-    if (parentTimestamp) {
-      // Parse the sibling's timestamp and use it
-      const [hours, minutes] = parentTimestamp.split(':').map(Number);
-      const inheritedDate = new Date();
-      inheritedDate.setHours(hours, minutes, 0, 0);
-      console.log(`📅 Inheriting timestamp from sibling: ${inheritedDate.toISOString()}`);
-      return inheritedDate;
-    }
-    
-    // Fallback to current time
-    console.log('📅 No sibling timestamp found, using current time');
-    return new Date();
+    return newContent;
   }
   
-  // Extract markdown content from a node
-  function extractNodeContent(node, pos) {
-    if (!node.textContent?.trim()) return null;
-    
-    let markdownContent = '';
-    let listDepth = 0;
-    let listType = null;
-    let isInList = false;
-    
-    // For list items, we need to check the parent structure
-    if (node.type.name === 'paragraph') {
-      // Check if this paragraph is inside list structure
-      const resolvedPos = editor.state.doc.resolve(pos);
+  function focusAtTimeline() {
+    if (editor) {
+      // Find the timeline mark position
+      const { doc } = editor.state;
+      let timelineNodePos = null;
+
+      doc.descendants((node, pos) => {
+        if (node.marks?.some(mark => mark.type.name === 'timeline')) {
+          timelineNodePos = pos;
+          return false; // Stop searching
+        }
+      });
+
+      if (timelineNodePos !== null) {
+        // Find the position after the timeline to focus there
+        const insertPos = timelineNodePos + 1;
+        
+        // Focus at the position after timeline
+        setTimeout(() => {
+          editor.commands.focus();
+          editor.commands.setTextSelection(insertPos);
+          scrollToTimelineCenter();
+        }, 50);
+      } else {
+        // If no timeline found, focus at end of document
+        const endPos = doc.content.size - 1;
+        
+        setTimeout(() => {
+          editor.commands.focus();
+          editor.commands.setTextSelection(endPos);
+        }, 50);
+      }
+    }
+  }
+
+  function scrollToTimelineCenter() {
+    if (editor) {
+      // Find the timeline element in the DOM
+      const timelineElement = editor.view.dom.querySelector('span[data-timeline]');
       
-      for (let d = resolvedPos.depth; d >= 0; d--) {
-        const parentNode = resolvedPos.node(d);
-        if (parentNode.type.name === 'listItem') {
-          isInList = true;
-          listDepth++;
-        } else if (parentNode.type.name === 'bulletList') {
-          listType = 'bullet';
-        } else if (parentNode.type.name === 'orderedList') {
-          listType = 'ordered';
-        }
+      if (timelineElement) {
+        // Scroll to center the timeline properly
+        timelineElement.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center',
+          inline: 'nearest'
+        });
       }
     }
-    
-    // Add leading spaces for indentation (2 spaces per level)
-    const indentation = '  '.repeat(Math.max(0, listDepth - 1));
-    
-    // Get text content with inline formatting
-    let textContent = '';
-    node.forEach((childNode) => {
-      if (childNode.isText) {
-        let text = childNode.text;
-        // Apply markdown formatting based on marks
-        if (childNode.marks) {
-          childNode.marks.forEach(mark => {
-            switch (mark.type.name) {
-              case 'strong':
-                text = `**${text}**`;
-                break;
-              case 'em':
-                text = `*${text}*`;
-                break;
-              case 'code':
-                text = `\`${text}\``;
-                break;
-            }
-          });
-        }
-        textContent += text;
-      }
-    });
-    
-    // Format based on node type
-    if (node.type.name === 'heading') {
-      const level = node.attrs.level || 1;
-      markdownContent = indentation + '#'.repeat(level) + ' ' + textContent;
-    } else if (isInList) {
-      // Add list marker
-      const marker = listType === 'ordered' ? '1.' : '-';
-      markdownContent = indentation + marker + ' ' + textContent;
-    } else {
-      // Regular paragraph
-      markdownContent = indentation + textContent;
-    }
-    
-    return {
-      markdown: markdownContent,
-      noteId: node.attrs?.noteId || null
-    };
-  }
-  
-            function focusAtTimeline() {
-            if (editor) {
-              // Find the timeline mark position
-              const { doc } = editor.state;
-              let timelineNodePos = null;
-
-              doc.descendants((node, pos) => {
-                if (node.marks?.some(mark => mark.type.name === 'timeline')) {
-                  timelineNodePos = pos;
-                  return false; // Stop searching
-                }
-              });
-
-              if (timelineNodePos !== null) {
-                // Find the position after the timeline to focus there
-                const tr = editor.state.tr;
-                const insertPos = timelineNodePos + 1;
-                
-                // Focus at the position after timeline
-                setTimeout(() => {
-                  editor.commands.focus();
-                  editor.commands.setTextSelection(insertPos);
-                  scrollToTimelineCenter();
-                }, 50);
-              } else {
-                // If no timeline found (hidden due to 2-minute rule), focus at end of document
-                const endPos = doc.content.size - 1;
-                
-                // Add 2 empty lines at the end for writing
-                const tr = editor.state.tr;
-                tr.insert(endPos, editor.schema.nodes.paragraph.create({ class: 'future-content' }));
-                tr.insert(endPos + 1, editor.schema.nodes.paragraph.create({ class: 'future-content' }));
-                editor.view.dispatch(tr);
-                
-                setTimeout(() => {
-                  editor.commands.focus();
-                  editor.commands.setTextSelection(endPos);
-                }, 50);
-              }
-            }
-          }
-
-            function scrollToTimelineCenter() {
-            if (editor) {
-              // Find the timeline element in the DOM
-              const timelineElement = editor.view.dom.querySelector('span[data-timeline]');
-              
-              if (timelineElement) {
-                // Scroll to center the timeline properly
-                timelineElement.scrollIntoView({ 
-                  behavior: 'smooth', 
-                  block: 'center',
-                  inline: 'nearest'
-                });
-              }
-            }
-          }
-
-  function isAtTimeline(pos) {
-    if (!editor) return false;
-    const { doc } = editor.state;
-    const resolvedPos = doc.resolve(pos);
-    return resolvedPos.parent.marks?.some(mark => mark.type.name === 'timeline') || false;
   }
 
   function isBeforeTimeline(pos) {
@@ -603,7 +481,7 @@
             opacity: 0.6; /* Dim future content */
           }
           
-          /* Timestamp gutter - now using proper data attributes */
+          /* Timestamp gutter - using data-timestamp attributes */
           :global(.ProseMirror p[data-timestamp]::before),
           :global(.ProseMirror h1[data-timestamp]::before),
           :global(.ProseMirror h2[data-timestamp]::before),
@@ -622,6 +500,11 @@
             pointer-events: none;
             line-height: inherit;
             z-index: 1000;
+          }
+          
+          /* Ensure paragraphs with note IDs are properly styled */
+          :global(.ProseMirror p[data-note-id]) {
+            position: relative;
           }
           
           /* Heading styles */
