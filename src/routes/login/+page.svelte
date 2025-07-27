@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { authActions, isAuthenticated } from '$lib/stores/auth.js';
-  import { checkOnlineStatus } from '$lib/utils/auth.js';
+  import { checkOnlineStatus, formatPhoneNumber } from '$lib/utils/auth.js';
   
   let phoneNumber = '';
   let verificationCode = '';
@@ -43,15 +43,20 @@
     error = '';
     
     try {
-      const result = await authActions.sendOTP(phoneNumber.trim());
+      const formattedPhone = formatPhoneNumber(phoneNumber.trim());
+      const result = await authActions.sendOTP(formattedPhone);
       
       if (result.success) {
         step = 'verify';
       } else {
         error = result.error || 'Failed to send verification code';
       }
-    } catch (err) {
-      error = 'Network error. Please check your connection and try again.';
+    } catch (formatError) {
+      if (formatError.message.includes('10 digits')) {
+        error = 'Please enter a valid phone number (at least 10 digits)';
+      } else {
+        error = formatError.message || 'Please enter a valid phone number';
+      }
     } finally {
       isLoading = false;
     }
@@ -67,15 +72,20 @@
     error = '';
     
     try {
-      const result = await authActions.verifyOTP(phoneNumber.trim(), verificationCode.trim());
+      const formattedPhone = formatPhoneNumber(phoneNumber.trim());
+      const result = await authActions.verifyOTP(formattedPhone, verificationCode.trim());
       
       if (result.success) {
         goto('/');
       } else {
         error = result.error || 'Invalid verification code';
       }
-    } catch (err) {
-      error = 'Network error. Please check your connection and try again.';
+    } catch (formatError) {
+      if (formatError.message.includes('10 digits')) {
+        error = 'Please enter a valid phone number (at least 10 digits)';
+      } else {
+        error = formatError.message || 'Please enter a valid phone number';
+      }
     } finally {
       isLoading = false;
     }
@@ -139,13 +149,13 @@
               required
               bind:value={phoneNumber}
               on:keypress={handleKeyPress}
-              placeholder="+1 (555) 123-4567"
+              placeholder="(781) 570-1234 or +1-781-570-1234"
               disabled={isLoading || !isOnline}
               class="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
           </div>
           <p class="mt-2 text-sm text-gray-500">
-            Enter your phone number including country code
+            Enter your phone number. US numbers will automatically get +1 prefix.
           </p>
         </div>
 

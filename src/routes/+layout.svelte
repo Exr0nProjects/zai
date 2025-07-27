@@ -1,27 +1,22 @@
 <script>
   import '../app.css';
-  import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { isAuthenticated, isLoading } from '$lib/stores/auth.js';
   
   let { children } = $props();
   
-  onMount(() => {
-    // Set up navigation guard
-    const unsubscribe = page.subscribe(($page) => {
-      if (!$isLoading) {
-        const isLoginPage = $page.route.id === '/login';
-        
-        if (!$isAuthenticated && !isLoginPage) {
-          goto('/login');
-        } else if ($isAuthenticated && isLoginPage) {
-          goto('/');
-        }
+  // Reactive navigation guard using Svelte 5 $effect
+  $effect(() => {
+    if (!$isLoading) {
+      const isLoginPage = $page.route.id === '/login';
+      
+      if (!$isAuthenticated && !isLoginPage) {
+        goto('/login');
+      } else if ($isAuthenticated && isLoginPage) {
+        goto('/');
       }
-    });
-    
-    return unsubscribe;
+    }
   });
 </script>
 
