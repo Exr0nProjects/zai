@@ -15,6 +15,8 @@
   let searchQuery = '';
   let editor;
   let element;
+  let saveTimeout;
+  let lastSavedContent = null;
   
   onMount(async () => {
     // Check online status
@@ -46,8 +48,12 @@
                 }),
               ],
       content: notesActions.buildTimelineDocument($notes),
-      onUpdate: ({ editor }) => {
-        // Auto-save functionality could go here
+      onUpdate: ({ editor, transaction }) => {
+        // Only save if this was a user edit (not a programmatic change)
+        if (transaction.docChanged && !transaction.getMeta('preventUpdate')) {
+          console.log('✅ Content changed, scheduling save...');
+          debouncedSave();
+        }
       },
       editorProps: {
         handleKeyDown: (view, event) => {
@@ -64,56 +70,8 @@
             }
           }
           
-                            // Handle Enter key to save current line
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    // Get current line content with formatting
-                    const doc = view.state.doc;
-                    const resolvedPos = doc.resolve(currentPos);
-                    const currentParagraph = resolvedPos.parent;
-
-                    if (currentParagraph && currentParagraph.textContent.trim()) {
-                      // Get the markdown representation of the paragraph
-                      let markdownContent = '';
-                      currentParagraph.forEach((node, offset) => {
-                        if (node.isText) {
-                          let text = node.text;
-                          // Apply markdown formatting based on marks
-                          if (node.marks) {
-                            node.marks.forEach(mark => {
-                              switch (mark.type.name) {
-                                case 'strong':
-                                  text = `**${text}**`;
-                                  break;
-                                case 'em':
-                                  text = `*${text}*`;
-                                  break;
-                                case 'code':
-                                  text = `\`${text}\``;
-                                  break;
-                              }
-                            });
-                          }
-                          markdownContent += text;
-                        }
-                      });
-
-                      // Check if this is a heading
-                      if (currentParagraph.type.name === 'heading') {
-                        const level = currentParagraph.attrs.level || 1;
-                        markdownContent = '#'.repeat(level) + ' ' + markdownContent;
-                      }
-
-                      // Save the current line with markdown formatting
-                      notesActions.saveNote(markdownContent, new Date());
-                      
-                      // Prevent default Enter behavior since we're handling the save manually
-                      // The content rebuild will create the appropriate new paragraph
-                      return true;
-                    }
-
-                    // If empty line, allow normal Enter behavior
-                    return false;
-                  }
+                            // Let TipTap handle Enter naturally for proper list behavior
+          
           return false;
         }
       }
@@ -123,11 +81,13 @@
             let isFirstLoad = true;
             const unsubscribe = notes.subscribe((currentNotes) => {
               if (editor && !$isLoading) {
+                console.log('📄 Notes subscription triggered, rebuilding content');
                 const newContent = notesActions.buildTimelineDocument(currentNotes);
                 const currentContent = editor.getJSON();
 
                 // Only update if content actually changed to avoid cursor jumps
                 if (JSON.stringify(newContent) !== JSON.stringify(currentContent)) {
+                  console.log('🔄 Content changed, updating editor');
                   editor.commands.setContent(newContent);
                   
                   // Only auto-jump on first page load, not on every content update
@@ -137,6 +97,8 @@
                       focusAtTimeline();
                     }, 200);
                   }
+                } else {
+                  console.log('⏸️ Content unchanged, skipping editor update');
                 }
               }
             });
@@ -147,6 +109,9 @@
   });
 
   onDestroy(() => {
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+    }
     if (editor) {
       editor.destroy();
     }
@@ -157,6 +122,255 @@
       // TODO: Implement search within editor content
       console.log('Searching for:', searchQuery);
     }
+  }
+  
+  // Track which nodes were modified in a transaction
+  function trackModifiedNodes(transaction) {
+    console.log('🔄 trackModifiedNodes called, steps:', transaction.steps.length);
+    transaction.steps.forEach((step, stepIndex) => {
+      if (step.from !== undefined && step.to !== undefined) {
+        console.log(`📝 Processing step ${stepIndex}: from ${step.from} to ${step.to}`);
+        // Find nodes that were affected by this step
+        const doc = transaction.docs[stepIndex] || transaction.doc;
+        doc.nodesBetween(step.from, step.to, (node, pos) => {
+          if (shouldTrackNode(node)) {
+            console.log(`✅ Tracking node at pos ${pos}:`, node.type.name, node.textContent?.slice(0, 50));
+            modifiedNodes.set(pos, { node, pos });
+          }
+        });
+      }
+    });
+    console.log(`📊 Total modified nodes tracked: ${modifiedNodes.size}`);
+  }
+  
+  // Check if a node should be tracked for saving
+  function shouldTrackNode(node) {
+    console.log(`🔍 shouldTrackNode: ${node.type.name}, attrs:`, node.attrs, 'text:', node.textContent?.slice(0, 30));
+    
+    if (!node.attrs) {
+      console.log('❌ No attrs, skipping');
+      return false;
+    }
+    
+    // Only track paragraphs and headings with future content
+    if (node.type.name !== 'paragraph' && node.type.name !== 'heading') {
+      console.log(`❌ Wrong type (${node.type.name}), skipping`);
+      return false;
+    }
+    
+    // Skip empty content
+    if (!node.textContent?.trim()) {
+      console.log(`❌ Empty content, skipping`);
+      return false;
+    }
+    
+    // Skip timeline marker with only the timeline symbol (​)
+    if (node.attrs.class === 'timeline-now' && node.textContent === '​') {
+      console.log(`❌ Timeline marker only, skipping`);
+      return false;
+    }
+    
+    // Track future content OR timeline content with actual text
+    const shouldTrack = node.attrs.class === 'future-content' || 
+                       (node.attrs.class === 'timeline-now' && node.textContent.length > 1);
+    console.log(`${shouldTrack ? '✅' : '❌'} Should track: ${shouldTrack} (class: ${node.attrs.class}, text: "${node.textContent?.slice(0, 20)}")`);
+    return shouldTrack;
+  }
+  
+  // Throttled save function - saves at most once per second
+  function throttledSave() {
+    const now = Date.now();
+    const timeSinceLastSave = now - lastSaveTime;
+    const throttleInterval = 1000; // 1 second throttle
+    
+    console.log(`⏱️ throttledSave called. Time since last save: ${timeSinceLastSave}ms`);
+    
+    if (timeSinceLastSave >= throttleInterval) {
+      // Enough time has passed, save immediately
+      console.log('💾 Saving immediately (throttle period expired)');
+      saveModifiedNodes();
+      lastSaveTime = now;
+    } else {
+      // Not enough time has passed, schedule save for when throttle period expires
+      if (saveTimeout) {
+        console.log('🔄 Clearing existing save timeout');
+        clearTimeout(saveTimeout);
+      }
+      
+      const remainingTime = throttleInterval - timeSinceLastSave;
+      console.log(`⏳ Scheduling save in ${remainingTime}ms`);
+      saveTimeout = setTimeout(async () => {
+        console.log('💾 Executing scheduled save');
+        await saveModifiedNodes();
+        lastSaveTime = Date.now();
+      }, remainingTime);
+    }
+  }
+  
+  // Get the node that currently has the cursor
+  function getCurrentCursorNodeId() {
+    if (!editor) return null;
+    
+    const { selection } = editor.state;
+    const pos = selection.from;
+    const resolvedPos = editor.state.doc.resolve(pos);
+    const currentNode = resolvedPos.parent;
+    
+    return currentNode?.attrs?.noteId || null;
+  }
+
+  // Save only the nodes that were actually modified (excluding the one with cursor)
+  async function saveModifiedNodes() {
+    console.log(`💾 saveModifiedNodes called. Modified nodes: ${modifiedNodes.size}`);
+    
+    if (!editor || modifiedNodes.size === 0) {
+      console.log('❌ No editor or no modified nodes, skipping save');
+      return;
+    }
+    
+    const currentCursorNodeId = getCurrentCursorNodeId();
+    console.log(`👆 Current cursor node ID: ${currentCursorNodeId}`);
+    
+    const nodesToSave = Array.from(modifiedNodes.values()).filter(({ node }) => {
+      const shouldSave = node.attrs?.noteId !== currentCursorNodeId;
+      if (!shouldSave) {
+        console.log(`⏭️ Skipping node with cursor: ${node.attrs?.noteId}`);
+      }
+      return shouldSave;
+    });
+    
+    // Only clear nodes that we're about to save, keep the cursor node for later
+    const savedNodeIds = new Set(nodesToSave.map(({ node }) => node.attrs?.noteId));
+    for (const [pos, { node }] of modifiedNodes.entries()) {
+      if (savedNodeIds.has(node.attrs?.noteId)) {
+        modifiedNodes.delete(pos);
+      }
+    }
+    
+    console.log(`📝 Processing ${nodesToSave.length} nodes for saving (${modifiedNodes.size} kept for later)`);
+    
+    for (const { node, pos } of nodesToSave) {
+      const contentData = extractNodeContent(node, pos);
+      if (contentData) {
+        console.log(`💾 Saving content: "${contentData.markdown}" (noteId: ${contentData.noteId})`);
+        
+        // Always update since all nodes now have IDs
+        const result = await notesActions.updateNote(contentData.noteId, contentData.markdown);
+        console.log('🔄 Update result:', result ? 'success' : 'failed');
+      } else {
+        console.log('❌ No content data extracted for node');
+      }
+    }
+    
+    console.log('✅ saveModifiedNodes completed');
+  }
+  
+  // Determine appropriate timestamp for new nodes
+  function getTimestampForNewNode(node, pos) {
+    // For timeline-now content, always use current time
+    if (node.attrs?.class === 'timeline-now') {
+      console.log('📅 Using current time for timeline-now node');
+      return new Date();
+    }
+    
+    // For other nodes, try to inherit timestamp from a nearby sibling
+    const doc = editor.state.doc;
+    let parentTimestamp = null;
+    
+    // Look for previous sibling with a timestamp
+    doc.descendants((sibling, siblingPos) => {
+      if (siblingPos < pos && sibling.attrs?.timestamp && sibling.attrs?.noteId) {
+        parentTimestamp = sibling.attrs.timestamp;
+        console.log(`📅 Found sibling timestamp: ${parentTimestamp} at pos ${siblingPos}`);
+      }
+    });
+    
+    if (parentTimestamp) {
+      // Parse the sibling's timestamp and use it
+      const [hours, minutes] = parentTimestamp.split(':').map(Number);
+      const inheritedDate = new Date();
+      inheritedDate.setHours(hours, minutes, 0, 0);
+      console.log(`📅 Inheriting timestamp from sibling: ${inheritedDate.toISOString()}`);
+      return inheritedDate;
+    }
+    
+    // Fallback to current time
+    console.log('📅 No sibling timestamp found, using current time');
+    return new Date();
+  }
+  
+  // Extract markdown content from a node
+  function extractNodeContent(node, pos) {
+    if (!node.textContent?.trim()) return null;
+    
+    let markdownContent = '';
+    let listDepth = 0;
+    let listType = null;
+    let isInList = false;
+    
+    // For list items, we need to check the parent structure
+    if (node.type.name === 'paragraph') {
+      // Check if this paragraph is inside list structure
+      const resolvedPos = editor.state.doc.resolve(pos);
+      
+      for (let d = resolvedPos.depth; d >= 0; d--) {
+        const parentNode = resolvedPos.node(d);
+        if (parentNode.type.name === 'listItem') {
+          isInList = true;
+          listDepth++;
+        } else if (parentNode.type.name === 'bulletList') {
+          listType = 'bullet';
+        } else if (parentNode.type.name === 'orderedList') {
+          listType = 'ordered';
+        }
+      }
+    }
+    
+    // Add leading spaces for indentation (2 spaces per level)
+    const indentation = '  '.repeat(Math.max(0, listDepth - 1));
+    
+    // Get text content with inline formatting
+    let textContent = '';
+    node.forEach((childNode) => {
+      if (childNode.isText) {
+        let text = childNode.text;
+        // Apply markdown formatting based on marks
+        if (childNode.marks) {
+          childNode.marks.forEach(mark => {
+            switch (mark.type.name) {
+              case 'strong':
+                text = `**${text}**`;
+                break;
+              case 'em':
+                text = `*${text}*`;
+                break;
+              case 'code':
+                text = `\`${text}\``;
+                break;
+            }
+          });
+        }
+        textContent += text;
+      }
+    });
+    
+    // Format based on node type
+    if (node.type.name === 'heading') {
+      const level = node.attrs.level || 1;
+      markdownContent = indentation + '#'.repeat(level) + ' ' + textContent;
+    } else if (isInList) {
+      // Add list marker
+      const marker = listType === 'ordered' ? '1.' : '-';
+      markdownContent = indentation + marker + ' ' + textContent;
+    } else {
+      // Regular paragraph
+      markdownContent = indentation + textContent;
+    }
+    
+    return {
+      markdown: markdownContent,
+      noteId: node.attrs?.noteId || null
+    };
   }
   
             function focusAtTimeline() {
@@ -286,7 +500,7 @@
                     <!-- Tiptap Editor -->
               <div
                 bind:this={element}
-                class="prose prose-lg max-w-none focus-within:outline-none min-h-[60vh] px-4 py-8"
+                class="prose max-w-none focus-within:outline-none min-h-[60vh] px-4 py-8"
                 style="padding-bottom: 50vh;"
               />
     {/if}
@@ -332,9 +546,29 @@
           :global(.ProseMirror) {
             outline: none;
             padding: 1rem 1rem 1rem 4rem; /* Left padding for timestamp gutter */
-            line-height: 1.8;
+            line-height: 1.15;
+            font-size: 12pt; /* 12pt font size */
             position: relative;
             font-family: 'Lora', serif; /* Use Lora specifically for the editor content */
+          }
+          
+          /* Remove default paragraph margins to respect line-height */
+          :global(.ProseMirror p) {
+            margin: 0;
+            padding-top: 0.25rem;    /* py-1 equivalent */
+            padding-bottom: 0.25rem; /* py-1 equivalent */
+            line-height: inherit;
+          }
+          
+          /* Remove default list margins */
+          :global(.ProseMirror ul, .ProseMirror ol) {
+            margin: 0;
+            padding-left: 1.5rem;
+          }
+          
+          :global(.ProseMirror li) {
+            margin: 0;
+            line-height: inherit;
           }
           
           :global(.ProseMirror p.is-editor-empty:first-child::before) {

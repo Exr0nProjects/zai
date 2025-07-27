@@ -6,10 +6,15 @@ import { get } from 'svelte/store';
 export const notes = writable([]);
 export const isLoading = writable(false);
 
-// Simple markdown parser for basic formatting
+// Simple markdown parser for basic formatting with indentation support
 function parseMarkdownContent(text) {
+  // Count leading spaces for indentation level
+  const leadingSpaces = text.match(/^( *)/)[1].length;
+  const indentLevel = Math.floor(leadingSpaces / 2); // 2 spaces per level
+  const trimmedText = text.trim();
+  
   // Check if it's a heading
-  const headingMatch = text.match(/^(#{1,6})\s+(.*)$/);
+  const headingMatch = trimmedText.match(/^(#{1,6})\s+(.*)$/);
   if (headingMatch) {
     return {
       type: 'heading',
@@ -18,10 +23,42 @@ function parseMarkdownContent(text) {
     };
   }
   
-  // Regular paragraph
+  // Check if it's a bullet list item
+  const bulletMatch = trimmedText.match(/^[-*+]\s+(.*)$/);
+  if (bulletMatch) {
+    return {
+      type: 'paragraph', // We'll handle list structure in buildTimelineDocument
+      attrs: { 
+        class: 'future-content',
+        listType: 'bullet',
+        indentLevel: indentLevel
+      },
+      content: parseInlineMarkdown(bulletMatch[1])
+    };
+  }
+  
+  // Check if it's an ordered list item
+  const orderedMatch = trimmedText.match(/^(\d+)\.\s+(.*)$/);
+  if (orderedMatch) {
+    return {
+      type: 'paragraph', // We'll handle list structure in buildTimelineDocument
+      attrs: { 
+        class: 'future-content',
+        listType: 'ordered',
+        indentLevel: indentLevel
+      },
+      content: parseInlineMarkdown(orderedMatch[2])
+    };
+  }
+  
+  // Regular paragraph (preserve indentation if any)
   return {
     type: 'paragraph',
-    content: parseInlineMarkdown(text)
+    attrs: { 
+      class: 'future-content',
+      indentLevel: indentLevel > 0 ? indentLevel : undefined
+    },
+    content: parseInlineMarkdown(trimmedText)
   };
 }
 
@@ -89,6 +126,59 @@ function parseInlineMarkdown(text) {
   }
   
   return content;
+}
+
+// Group consecutive list items into proper TipTap list structures
+function groupListItems(nodeDataArray) {
+  const result = [];
+  let i = 0;
+  
+  while (i < nodeDataArray.length) {
+    const currentNode = nodeDataArray[i];
+    
+    // If this isn't a list item, add it directly
+    if (!currentNode.attrs?.listType) {
+      result.push(currentNode);
+      i++;
+      continue;
+    }
+    
+    // Start building a list
+    const listType = currentNode.attrs.listType;
+    const listNode = {
+      type: listType === 'bullet' ? 'bulletList' : 'orderedList',
+      attrs: {
+        class: currentNode.attrs.class,
+        timestamp: currentNode.attrs.timestamp
+      },
+      content: []
+    };
+    
+    // Collect all consecutive list items of the same type
+    while (i < nodeDataArray.length && 
+           nodeDataArray[i].attrs?.listType === listType) {
+      const listItemNode = nodeDataArray[i];
+      
+      listNode.content.push({
+        type: 'listItem',
+        attrs: {
+          noteId: listItemNode.attrs.noteId
+        },
+        content: [
+          {
+            type: 'paragraph',
+            content: listItemNode.content
+          }
+        ]
+      });
+      
+      i++;
+    }
+    
+    result.push(listNode);
+  }
+  
+  return result;
 }
 
 // Generate client-side ID that fits in PostgreSQL bigint (64-bit signed integer)
@@ -190,6 +280,68 @@ export const notesActions = {
     }
   },
 
+  async updateNote(noteId, newContent) {
+    try {
+      const currentUser = get(user);
+      if (!currentUser?.id) {
+        console.warn('No user available for updating note');
+        return null;
+      }
+
+      // Check if this is a local ID that doesn't exist in DB yet
+      if (noteId.startsWith('local_')) {
+        console.log('🆔 Local ID detected, creating new note in database');
+        // Create a new note with a proper ID
+        const result = await this.saveNote(newContent.trim(), new Date());
+        
+        if (result) {
+          // Update local store to replace the local ID with the real ID
+          notes.update(currentNotes => 
+            currentNotes.map(note => 
+              note.id === noteId 
+                ? { ...result } // Replace with the saved note data
+                : note
+            )
+          );
+        }
+        return result;
+      }
+
+      // Update in local store first (preserve original timestamp)
+      notes.update(currentNotes => 
+        currentNotes.map(note => 
+          note.id === noteId 
+            ? { ...note, contents: newContent.trim() }
+            : note
+        )
+      );
+
+      // Try to update in database (only update contents, NOT timestamp)
+      const { data, error } = await supabase
+        .from('notes')
+        .update({ 
+          contents: newContent.trim()
+          // Deliberately NOT updating created_at to preserve original timestamp
+        })
+        .eq('id', noteId)
+        .eq('user_id', currentUser.id) // Ensure user can only update their own notes
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating note:', error);
+        // Revert local changes if update failed
+        await this.loadNotes(); // Reload from database to get correct state
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Note updating error:', error);
+      return null;
+    }
+  },
+
   // Combine all notes into a single document for Tiptap
   buildTimelineDocument(notesArray, currentTime = new Date()) {
     if (!notesArray?.length) {
@@ -270,8 +422,9 @@ export const notesActions = {
       }
     }
 
-    // Add all past notes
-    content.push(...pastNotes);
+    // Group list items and add all past notes
+    const groupedPastNotes = groupListItems(pastNotes);
+    content.push(...groupedPastNotes);
 
     // Check if we should show the timeline mark (only if 2+ minutes from last note)
     let shouldShowTimeline = true;
@@ -310,8 +463,9 @@ export const notesActions = {
       content: []
     });
 
-    // Add all future notes
-    content.push(...futureNotes);
+    // Group list items and add all future notes
+    const groupedFutureNotes = groupListItems(futureNotes);
+    content.push(...groupedFutureNotes);
 
     return {
       type: 'doc',
