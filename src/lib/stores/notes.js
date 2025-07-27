@@ -3,7 +3,7 @@ import { supabase } from '$lib/supabase.js';
 import { user } from './auth.js';
 import { get } from 'svelte/store';
 
-export const notes = writable([]);
+export const notes = writable(new Map());
 export const isLoading = writable(false);
 
 // Generate client-side ID that fits in PostgreSQL bigint (64-bit signed integer)
@@ -36,7 +36,7 @@ export const notesActions = {
       const currentUser = get(user);
       if (!currentUser?.id) {
         console.warn('No user ID available');
-        notes.set([]);
+        notes.set(new Map());
         return;
       }
 
@@ -49,14 +49,19 @@ export const notesActions = {
       if (error) {
         console.error('Error loading notes:', error);
         // Graceful fallback - continue without database
-        notes.set([]);
+        notes.set(new Map());
         return;
       }
 
-      notes.set(data || []);
+      // Convert array to Map
+      const notesMap = new Map();
+      (data || []).forEach(note => {
+        notesMap.set(note.id, note);
+      });
+      notes.set(notesMap);
     } catch (error) {
       console.error('Notes loading error:', error);
-      notes.set([]);
+      notes.set(new Map());
     } finally {
       isLoading.set(false);
     }
@@ -80,7 +85,11 @@ export const notesActions = {
       };
 
       // Optimistically add to local store
-      notes.update(currentNotes => [...currentNotes, note]);
+      notes.update(currentNotes => {
+        const newNotes = new Map(currentNotes);
+        newNotes.set(noteId, note);
+        return newNotes;
+      });
 
       // Try to save to database - RLS will automatically filter by auth.uid()
       const { data, error } = await supabase
@@ -92,9 +101,11 @@ export const notesActions = {
       if (error) {
         console.error('Error saving note:', error);
         // Remove from local store if save failed
-        notes.update(currentNotes => 
-          currentNotes.filter(n => n.id !== noteId)
-        );
+        notes.update(currentNotes => {
+          const newNotes = new Map(currentNotes);
+          newNotes.delete(noteId);
+          return newNotes;
+        });
         return null;
       }
 
@@ -121,25 +132,25 @@ export const notesActions = {
         
         if (result) {
           // Update local store to replace the local ID with the real ID
-          notes.update(currentNotes => 
-            currentNotes.map(note => 
-              note.id === noteId 
-                ? { ...result } // Replace with the saved note data
-                : note
-            )
-          );
+          notes.update(currentNotes => {
+            const newNotes = new Map(currentNotes);
+            newNotes.delete(noteId); // Remove old local ID
+            newNotes.set(result.id, result); // Add with real ID
+            return newNotes;
+          });
         }
         return result;
       }
 
       // Update in local store first (preserve original timestamp)
-      notes.update(currentNotes => 
-        currentNotes.map(note => 
-          note.id === noteId 
-            ? { ...note, contents: newContent.trim() }
-            : note
-        )
-      );
+      notes.update(currentNotes => {
+        const newNotes = new Map(currentNotes);
+        const existingNote = newNotes.get(noteId);
+        if (existingNote) {
+          newNotes.set(noteId, { ...existingNote, contents: newContent.trim() });
+        }
+        return newNotes;
+      });
 
       // Try to update in database (only update contents, NOT timestamp)
       const { data, error } = await supabase
@@ -168,7 +179,10 @@ export const notesActions = {
   },
 
   // Combine all notes into a single document for Tiptap
-  buildTimelineDocument(notesArray, currentTime = new Date()) {
+  buildTimelineDocument(notesMap, currentTime = new Date()) {
+    // Convert Map to array for existing logic
+    const notesArray = Array.from(notesMap.values());
+    
     if (!notesArray?.length) {
       return {
         type: 'doc',

@@ -129,8 +129,7 @@
   }
 
   function saveChangedToStore(editor) {
-    const content = editor.getJSON();
-    notesActions.saveNote(content);
+    
   }
   
   // Get the node that currently has the cursor

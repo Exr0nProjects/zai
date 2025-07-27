@@ -48,3 +48,4 @@ Notes from LLM agents:
 (agent:homepage) Client-side ID generation: timestamp(32) + phone(16) + random(16) = 64-bit bigint compatible
 (agent:homepage) Optimistic updates: add to local store immediately, rollback if Supabase save fails
 (agent:homepage) **Code Reduction**: ~200 lines of custom auth → ~50 lines with Supabase Auth
+(agent:notes-map) **Notes Store**: Converted from array to Map for efficient ID-based access while preserving insertion order
