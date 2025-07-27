@@ -1,15 +1,4 @@
 import { browser } from '$app/environment';
-import Cookies from 'js-cookie';
-
-export function getAuthToken() {
-  if (!browser) return null;
-  return Cookies.get('auth_token');
-}
-
-export function isUserAuthenticated() {
-  const token = getAuthToken();
-  return !!token;
-}
 
 export async function checkOnlineStatus() {
   if (!browser) return true;

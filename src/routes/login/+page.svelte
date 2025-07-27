@@ -43,18 +43,12 @@
     error = '';
     
     try {
-      const response = await fetch('/api/auth/send-sms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber: phoneNumber.trim() })
-      });
+      const result = await authActions.sendOTP(phoneNumber.trim());
       
-      const data = await response.json();
-      
-      if (data.success) {
+      if (result.success) {
         step = 'verify';
       } else {
-        error = data.error || 'Failed to send verification code';
+        error = result.error || 'Failed to send verification code';
       }
     } catch (err) {
       error = 'Network error. Please check your connection and try again.';
@@ -73,22 +67,12 @@
     error = '';
     
     try {
-      const response = await fetch('/api/auth/verify-sms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          phoneNumber: phoneNumber.trim(), 
-          code: verificationCode.trim() 
-        })
-      });
+      const result = await authActions.verifyOTP(phoneNumber.trim(), verificationCode.trim());
       
-      const data = await response.json();
-      
-      if (data.success) {
-        authActions.login(data.token, data.user);
+      if (result.success) {
         goto('/');
       } else {
-        error = data.error || 'Invalid verification code';
+        error = result.error || 'Invalid verification code';
       }
     } catch (err) {
       error = 'Network error. Please check your connection and try again.';

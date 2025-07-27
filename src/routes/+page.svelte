@@ -135,7 +135,7 @@
     <!-- Phone Number -->
     <div class="flex items-center space-x-3">
       <div class="text-sm font-medium text-gray-900">
-        {$user?.phone || 'Loading...'}
+        {$user?.phone || $user?.email || 'Loading...'}
       </div>
       <button 
         on:click={logout}

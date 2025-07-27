@@ -8,7 +8,8 @@ export const isLoading = writable(false);
 
 // Generate client-side ID that fits in PostgreSQL bigint (64-bit signed integer)
 function generateNoteId() {
-  const userPhone = get(user)?.phone || '';
+  const currentUser = get(user);
+  const userPhone = currentUser?.phone || '';
   
   // Use timestamp in seconds (not milliseconds) to save space - 32 bits is enough until 2106
   const timestampSec = Math.floor(Date.now() / 1000);
@@ -33,15 +34,16 @@ export const notesActions = {
     isLoading.set(true);
     try {
       const currentUser = get(user);
-      if (!currentUser?.phone) {
-        console.warn('No user phone available');
+      if (!currentUser?.id) {
+        console.warn('No user ID available');
+        notes.set([]);
         return;
       }
 
       const { data, error } = await supabase
         .from('notes')
         .select('*')
-        .eq('user', currentUser.phone)
+        .eq('user_id', currentUser.id)
         .order('created_at', { ascending: true });
 
       if (error) {
@@ -63,7 +65,7 @@ export const notesActions = {
   async saveNote(content, timestamp = new Date()) {
     try {
       const currentUser = get(user);
-      if (!currentUser?.phone) {
+      if (!currentUser?.id) {
         console.warn('No user available for saving note');
         return null;
       }
@@ -71,7 +73,7 @@ export const notesActions = {
       const noteId = generateNoteId();
       const note = {
         id: noteId,
-        user: currentUser.phone,
+        user_id: currentUser.id, // Use Supabase auth user ID
         created_at: timestamp.toISOString(),
         type: 'md',
         contents: content.trim()
@@ -80,7 +82,7 @@ export const notesActions = {
       // Optimistically add to local store
       notes.update(currentNotes => [...currentNotes, note]);
 
-      // Try to save to database
+      // Try to save to database - RLS will automatically filter by auth.uid()
       const { data, error } = await supabase
         .from('notes')
         .insert([note])

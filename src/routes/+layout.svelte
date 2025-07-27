@@ -3,23 +3,11 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { isAuthenticated, isLoading, authActions } from '$lib/stores/auth.js';
-  import { isUserAuthenticated } from '$lib/utils/auth.js';
+  import { isAuthenticated, isLoading } from '$lib/stores/auth.js';
   
   let { children } = $props();
   
   onMount(() => {
-    // Initialize auth state
-    const authenticated = isUserAuthenticated();
-    if (authenticated !== $isAuthenticated) {
-      // Sync store with actual auth state
-      if (authenticated) {
-        // Auth state will be set by the store initialization
-      } else {
-        authActions.logout();
-      }
-    }
-    
     // Set up navigation guard
     const unsubscribe = page.subscribe(($page) => {
       if (!$isLoading) {

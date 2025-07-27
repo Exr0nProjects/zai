@@ -1,48 +1,89 @@
 import { writable } from 'svelte/store';
 import { browser } from '$app/environment';
-import Cookies from 'js-cookie';
+import { supabase } from '$lib/supabase.js';
 
-// Auth state store
-export const isAuthenticated = writable(false);
+// Auth state stores
 export const user = writable(null);
+export const session = writable(null);
+export const isAuthenticated = writable(false);
 export const isLoading = writable(true);
 
-// Initialize auth state from cookies on browser load
+// Initialize auth state from Supabase session
 if (browser) {
-  const token = Cookies.get('auth_token');
-  const userData = Cookies.get('user_data');
-  
-  if (token && userData) {
-    try {
-      const parsedUser = JSON.parse(userData);
-      user.set(parsedUser);
+  // Get initial session with error handling
+  supabase.auth.getSession()
+    .then(({ data: { session: currentSession } }) => {
+      if (currentSession) {
+        user.set(currentSession.user);
+        session.set(currentSession);
+        isAuthenticated.set(true);
+      }
+      isLoading.set(false);
+    })
+    .catch((error) => {
+      console.warn('Supabase auth initialization failed:', error);
+      isLoading.set(false);
+    });
+
+  // Listen for auth changes
+  supabase.auth.onAuthStateChange((event, newSession) => {
+    if (newSession) {
+      user.set(newSession.user);
+      session.set(newSession);
       isAuthenticated.set(true);
-    } catch (e) {
-      console.error('Error parsing user data:', e);
-      Cookies.remove('auth_token');
-      Cookies.remove('user_data');
+    } else {
+      user.set(null);
+      session.set(null);
+      isAuthenticated.set(false);
     }
-  }
-  isLoading.set(false);
+    isLoading.set(false);
+  });
 }
 
-// Auth actions
+// Auth actions using Supabase Auth
 export const authActions = {
-  login: (token, userData) => {
-    if (browser) {
-      Cookies.set('auth_token', token, { expires: 30, secure: true, sameSite: 'strict' });
-      Cookies.set('user_data', JSON.stringify(userData), { expires: 30, secure: true, sameSite: 'strict' });
-      user.set(userData);
-      isAuthenticated.set(true);
+  async sendOTP(phone) {
+    try {
+      const { data, error } = await supabase.auth.signInWithOtp({
+        phone: phone
+      });
+      
+      if (error) throw error;
+      return { success: true, data };
+    } catch (error) {
+      console.error('Send OTP error:', error);
+      return { success: false, error: error.message };
     }
   },
-  
-  logout: () => {
-    if (browser) {
-      Cookies.remove('auth_token');
-      Cookies.remove('user_data');
-      user.set(null);
-      isAuthenticated.set(false);
+
+  async verifyOTP(phone, token) {
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: phone,
+        token: token,
+        type: 'sms'
+      });
+      
+      if (error) throw error;
+      
+      // Session is automatically set by onAuthStateChange
+      return { success: true, data };
+    } catch (error) {
+      console.error('Verify OTP error:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  async logout() {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      
+      // State is automatically cleared by onAuthStateChange
+      return { success: true };
+    } catch (error) {
+      console.error('Logout error:', error);
+      return { success: false, error: error.message };
     }
   }
 }; 
