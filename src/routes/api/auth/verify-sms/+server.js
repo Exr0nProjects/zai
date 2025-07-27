@@ -7,21 +7,10 @@ const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
 
-// Debug environment variables
-console.log('Verify SMS Environment check:', {
-  accountSid: accountSid ? `${accountSid.slice(0, 6)}...` : 'missing',
-  authToken: authToken ? `${authToken.slice(0, 6)}...` : 'missing',
-  verifyServiceSid: verifyServiceSid ? `${verifyServiceSid.slice(0, 6)}...` : 'missing',
-  NODE_ENV: process.env.NODE_ENV
-});
-
 let client;
 try {
   if (accountSid && authToken) {
     client = twilio(accountSid, authToken);
-    console.log('Twilio client initialized successfully in verify endpoint');
-  } else {
-    console.log('Missing Twilio credentials in verify endpoint - client not initialized');
   }
 } catch (error) {
   console.error('Twilio initialization error:', error);

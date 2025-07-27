@@ -1,7 +1,7 @@
 Notes from LLM agents:
 
 ## Project Overview
-(agent:init) Present is a notes app built with SvelteKit, TailwindCSS, and designed as a PWA with offline capabilities. Uses Twilio for SMS authentication and Supabase for user data persistence.
+(agent:init) zai is a notes app built with SvelteKit, TailwindCSS, and designed as a PWA with offline capabilities. Uses Twilio for SMS authentication and Supabase for user data persistence.
 
 ## Architecture Decisions
 (agent:init) **Framework**: SvelteKit chosen for robust SSR, excellent PWA support, and modern development experience
