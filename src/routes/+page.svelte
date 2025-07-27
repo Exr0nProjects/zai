@@ -16,8 +16,6 @@
   let editor;
   let element;
   let saveTimeout = null;
-  let lastSavedContent = null;
-  const saveTransactionQueue = [];
   let lastSaveTime = 0;
   
   onMount(async () => {
@@ -51,10 +49,7 @@
       ],
       content: notesActions.buildTimelineDocument($notes),
       onUpdate: ({ editor, transaction }) => {
-        // Only save if this was a user edit (not a programmatic change)
-        if (transaction.docChanged && !transaction.getMeta('preventUpdate')) {
-          throttledSave(transaction);
-        }
+        throttledSaveChanged(editor);
       },
       editorProps: {
         handleKeyDown: (view, event) => {
@@ -120,116 +115,24 @@
     }
   }
   
-  
-  
-  /// SAVING 
-  function throttledSave(transaction) {
-    saveTransactionQueue.push(transaction);
-    
-    const now = Date.now();
-    const timeSinceLastSave = now - lastSaveTime;
-    const throttleInterval = 1000; // 1 second throttle
-    
-    if (timeSinceLastSave >= throttleInterval) {
-      // Enough time has passed, save immediately
-      saveModifiedNodes();
-      lastSaveTime = now;
+  function throttledSaveChanged(editor) {
+    let currentTime = new Date();
+    const THROTTLE_DURATION = 1000;
+    if (currentTime - lastSaveTime < THROTTLE_DURATION) {
+      saveChangedToStore(editor);
     } else {
-      // Not enough time has passed, schedule save for when throttle period expires
-      if (saveTimeout === null) {
-        saveTimeout = setTimeout(async () => {
-          await saveModifiedNodes();
-          lastSaveTime = Date.now();
-          saveTimeout = null; // Reset timeout
-        }, throttleInterval - timeSinceLastSave);
-      }
+      saveTimeout = setTimeout(() => {
+        saveChangedToStore(editor);
+        lastSaveTime = currentTime;
+      }, THROTTLE_DURATION - (currentTime - lastSaveTime));
     }
+  }
+
+  function saveChangedToStore(editor) {
+    const content = editor.getJSON();
+    notesActions.saveNote(content);
   }
   
-  async function saveModifiedNodes() {
-    if (saveTransactionQueue.length === 0) return;
-    
-    // Process all queued transactions
-    const processedTransactions = [...saveTransactionQueue];
-    saveTransactionQueue.length = 0; // Clear the queue
-    
-    const changedNodes = new Map(); // Map to store unique changed nodes by position
-    
-    for (const transaction of processedTransactions) {
-      // Analyze each step in the transaction to find changed content
-      transaction.steps.forEach((step, stepIndex) => {
-        // Handle different types of steps
-        if (step.jsonID === 'replace' || step.jsonID === 'replaceAround') {
-          const from = step.from;
-          const to = step.to || step.from;
-          
-          // Find the nodes that were affected by this change
-          const doc = transaction.doc;
-          
-          // Look at the range that was modified
-          doc.nodesBetween(from, to, (node, pos, parent) => {
-            // Only process nodes that have content and are not the document root
-            if (node.isBlock && node.textContent && pos !== 0) {
-              const nodeEnd = pos + node.nodeSize;
-              
-              // Check if this node was actually in the changed range
-              if (pos >= from && pos <= to) {
-                // Extract the content from this node
-                const nodeContent = extractNodeContent(node, pos);
-                if (nodeContent && nodeContent.markdown) {
-                  changedNodes.set(pos, {
-                    position: pos,
-                    nodeId: nodeContent.noteId,
-                    content: nodeContent.markdown,
-                    timestamp: node.attrs?.timestamp,
-                    nodeType: node.type.name,
-                    node: node,
-                    isNew: !nodeContent.noteId // No noteId means it's a new node
-                  });
-                }
-              }
-            }
-          });
-        }
-      });
-    }
-    
-    // Process the unique changed nodes
-    for (const [position, nodeData] of changedNodes) {
-      
-      try {
-        if (nodeData.isNew) {
-          // This is a new node that needs to be created
-          const timestamp = getTimestampForNewNode(nodeData.node, position);
-          
-          const newNote = await notesActions.createNote(nodeData.content, timestamp);
-          
-          if (newNote) {
-            // Update the node in the editor to include the new noteId
-            const tr = editor.state.tr;
-            const nodePos = editor.state.doc.resolve(position);
-            
-            if (nodePos.parent) {
-              const newAttrs = { 
-                ...nodePos.parent.attrs, 
-                noteId: newNote.id,
-                timestamp: timestamp.toTimeString().slice(0, 5) // HH:MM format
-              };
-              
-              tr.setNodeMarkup(position, null, newAttrs);
-              tr.setMeta('preventUpdate', true); // Prevent triggering another save
-              editor.view.dispatch(tr);
-            }
-          }
-        } else if (nodeData.nodeId) {
-          // This is an existing node that needs to be updated
-          await notesActions.updateNote(nodeData.nodeId, nodeData.content);
-        }
-      } catch (error) {
-        // Handle save errors silently or with user notification
-      }
-    }
-  }
   // Get the node that currently has the cursor
   function getCurrentCursorNodeId() {
     if (!editor) return null;
