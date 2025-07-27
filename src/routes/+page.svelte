@@ -15,8 +15,10 @@
   let searchQuery = '';
   let editor;
   let element;
-  let saveTimeout;
+  let saveTimeout = null;
   let lastSavedContent = null;
+  const saveTransactionQueue = [];
+  let lastSaveTime = 0;
   
   onMount(async () => {
     // Check online status
@@ -51,8 +53,7 @@
       onUpdate: ({ editor, transaction }) => {
         // Only save if this was a user edit (not a programmatic change)
         if (transaction.docChanged && !transaction.getMeta('preventUpdate')) {
-          console.log('✅ Content changed, scheduling save...');
-          debouncedSave();
+          throttledSave(transaction);
         }
       },
       editorProps: {
@@ -81,13 +82,11 @@
             let isFirstLoad = true;
             const unsubscribe = notes.subscribe((currentNotes) => {
               if (editor && !$isLoading) {
-                console.log('📄 Notes subscription triggered, rebuilding content');
                 const newContent = notesActions.buildTimelineDocument(currentNotes);
                 const currentContent = editor.getJSON();
 
                 // Only update if content actually changed to avoid cursor jumps
                 if (JSON.stringify(newContent) !== JSON.stringify(currentContent)) {
-                  console.log('🔄 Content changed, updating editor');
                   editor.commands.setContent(newContent);
                   
                   // Only auto-jump on first page load, not on every content update
@@ -97,8 +96,6 @@
                       focusAtTimeline();
                     }, 200);
                   }
-                } else {
-                  console.log('⏸️ Content unchanged, skipping editor update');
                 }
               }
             });
@@ -120,93 +117,119 @@
   function handleSearch() {
     if (searchQuery.trim()) {
       // TODO: Implement search within editor content
-      console.log('Searching for:', searchQuery);
     }
   }
-  
-  // Track which nodes were modified in a transaction
-  function trackModifiedNodes(transaction) {
-    console.log('🔄 trackModifiedNodes called, steps:', transaction.steps.length);
-    transaction.steps.forEach((step, stepIndex) => {
-      if (step.from !== undefined && step.to !== undefined) {
-        console.log(`📝 Processing step ${stepIndex}: from ${step.from} to ${step.to}`);
-        // Find nodes that were affected by this step
-        const doc = transaction.docs[stepIndex] || transaction.doc;
-        doc.nodesBetween(step.from, step.to, (node, pos) => {
-          if (shouldTrackNode(node)) {
-            console.log(`✅ Tracking node at pos ${pos}:`, node.type.name, node.textContent?.slice(0, 50));
-            modifiedNodes.set(pos, { node, pos });
-          }
-        });
-      }
-    });
-    console.log(`📊 Total modified nodes tracked: ${modifiedNodes.size}`);
-  }
-  
-  // Check if a node should be tracked for saving
-  function shouldTrackNode(node) {
-    console.log(`🔍 shouldTrackNode: ${node.type.name}, attrs:`, node.attrs, 'text:', node.textContent?.slice(0, 30));
-    
-    if (!node.attrs) {
-      console.log('❌ No attrs, skipping');
-      return false;
-    }
-    
-    // Only track paragraphs and headings with future content
-    if (node.type.name !== 'paragraph' && node.type.name !== 'heading') {
-      console.log(`❌ Wrong type (${node.type.name}), skipping`);
-      return false;
-    }
-    
-    // Skip empty content
-    if (!node.textContent?.trim()) {
-      console.log(`❌ Empty content, skipping`);
-      return false;
-    }
-    
-    // Skip timeline marker with only the timeline symbol (​)
-    if (node.attrs.class === 'timeline-now' && node.textContent === '​') {
-      console.log(`❌ Timeline marker only, skipping`);
-      return false;
-    }
-    
-    // Track future content OR timeline content with actual text
-    const shouldTrack = node.attrs.class === 'future-content' || 
-                       (node.attrs.class === 'timeline-now' && node.textContent.length > 1);
-    console.log(`${shouldTrack ? '✅' : '❌'} Should track: ${shouldTrack} (class: ${node.attrs.class}, text: "${node.textContent?.slice(0, 20)}")`);
-    return shouldTrack;
-  }
-  
-  // Throttled save function - saves at most once per second
-  function throttledSave() {
+
+
+
+  /// SAVING 
+  function throttledSave(transaction) {
+    saveTransactionQueue.push(transaction);
+
     const now = Date.now();
     const timeSinceLastSave = now - lastSaveTime;
     const throttleInterval = 1000; // 1 second throttle
-    
-    console.log(`⏱️ throttledSave called. Time since last save: ${timeSinceLastSave}ms`);
-    
+
     if (timeSinceLastSave >= throttleInterval) {
       // Enough time has passed, save immediately
-      console.log('💾 Saving immediately (throttle period expired)');
       saveModifiedNodes();
       lastSaveTime = now;
     } else {
       // Not enough time has passed, schedule save for when throttle period expires
-      if (saveTimeout) {
-        console.log('🔄 Clearing existing save timeout');
-        clearTimeout(saveTimeout);
+      if (saveTimeout === null) {
+        saveTimeout = setTimeout(async () => {
+          await saveModifiedNodes();
+          lastSaveTime = Date.now();
+          saveTimeout = null; // Reset timeout
+        }, throttleInterval - timeSinceLastSave);
       }
-      
-      const remainingTime = throttleInterval - timeSinceLastSave;
-      console.log(`⏳ Scheduling save in ${remainingTime}ms`);
-      saveTimeout = setTimeout(async () => {
-        console.log('💾 Executing scheduled save');
-        await saveModifiedNodes();
-        lastSaveTime = Date.now();
-      }, remainingTime);
     }
   }
   
+  async function saveModifiedNodes() {
+    if (saveTransactionQueue.length === 0) return;
+    
+    // Process all queued transactions
+    const processedTransactions = [...saveTransactionQueue];
+    saveTransactionQueue.length = 0; // Clear the queue
+    
+    const changedNodes = new Map(); // Map to store unique changed nodes by position
+    
+    for (const transaction of processedTransactions) {
+      // Analyze each step in the transaction to find changed content
+      transaction.steps.forEach((step, stepIndex) => {
+        // Handle different types of steps
+        if (step.jsonID === 'replace' || step.jsonID === 'replaceAround') {
+          const from = step.from;
+          const to = step.to || step.from;
+          
+          // Find the nodes that were affected by this change
+          const doc = transaction.doc;
+          
+          // Look at the range that was modified
+          doc.nodesBetween(from, to, (node, pos, parent) => {
+            // Only process nodes that have content and are not the document root
+            if (node.isBlock && node.textContent && pos !== 0) {
+              const nodeEnd = pos + node.nodeSize;
+              
+              // Check if this node was actually in the changed range
+              if (pos >= from && pos <= to) {
+                // Extract the content from this node
+                const nodeContent = extractNodeContent(node, pos);
+                if (nodeContent && nodeContent.markdown) {
+                  changedNodes.set(pos, {
+                    position: pos,
+                    nodeId: nodeContent.noteId,
+                    content: nodeContent.markdown,
+                    timestamp: node.attrs?.timestamp,
+                    nodeType: node.type.name,
+                    node: node,
+                    isNew: !nodeContent.noteId // No noteId means it's a new node
+                  });
+                }
+              }
+            }
+          });
+        }
+      });
+    }
+    
+    // Process the unique changed nodes
+    for (const [position, nodeData] of changedNodes) {
+      
+      try {
+        if (nodeData.isNew) {
+          // This is a new node that needs to be created
+          const timestamp = getTimestampForNewNode(nodeData.node, position);
+          
+          const newNote = await notesActions.createNote(nodeData.content, timestamp);
+          
+          if (newNote) {
+            // Update the node in the editor to include the new noteId
+            const tr = editor.state.tr;
+            const nodePos = editor.state.doc.resolve(position);
+            
+            if (nodePos.parent) {
+              const newAttrs = { 
+                ...nodePos.parent.attrs, 
+                noteId: newNote.id,
+                timestamp: timestamp.toTimeString().slice(0, 5) // HH:MM format
+              };
+              
+              tr.setNodeMarkup(position, null, newAttrs);
+              tr.setMeta('preventUpdate', true); // Prevent triggering another save
+              editor.view.dispatch(tr);
+            }
+          }
+        } else if (nodeData.nodeId) {
+          // This is an existing node that needs to be updated
+          await notesActions.updateNote(nodeData.nodeId, nodeData.content);
+        }
+      } catch (error) {
+        // Handle save errors silently or with user notification
+      }
+    }
+  }
   // Get the node that currently has the cursor
   function getCurrentCursorNodeId() {
     if (!editor) return null;
@@ -219,57 +242,11 @@
     return currentNode?.attrs?.noteId || null;
   }
 
-  // Save only the nodes that were actually modified (excluding the one with cursor)
-  async function saveModifiedNodes() {
-    console.log(`💾 saveModifiedNodes called. Modified nodes: ${modifiedNodes.size}`);
-    
-    if (!editor || modifiedNodes.size === 0) {
-      console.log('❌ No editor or no modified nodes, skipping save');
-      return;
-    }
-    
-    const currentCursorNodeId = getCurrentCursorNodeId();
-    console.log(`👆 Current cursor node ID: ${currentCursorNodeId}`);
-    
-    const nodesToSave = Array.from(modifiedNodes.values()).filter(({ node }) => {
-      const shouldSave = node.attrs?.noteId !== currentCursorNodeId;
-      if (!shouldSave) {
-        console.log(`⏭️ Skipping node with cursor: ${node.attrs?.noteId}`);
-      }
-      return shouldSave;
-    });
-    
-    // Only clear nodes that we're about to save, keep the cursor node for later
-    const savedNodeIds = new Set(nodesToSave.map(({ node }) => node.attrs?.noteId));
-    for (const [pos, { node }] of modifiedNodes.entries()) {
-      if (savedNodeIds.has(node.attrs?.noteId)) {
-        modifiedNodes.delete(pos);
-      }
-    }
-    
-    console.log(`📝 Processing ${nodesToSave.length} nodes for saving (${modifiedNodes.size} kept for later)`);
-    
-    for (const { node, pos } of nodesToSave) {
-      const contentData = extractNodeContent(node, pos);
-      if (contentData) {
-        console.log(`💾 Saving content: "${contentData.markdown}" (noteId: ${contentData.noteId})`);
-        
-        // Always update since all nodes now have IDs
-        const result = await notesActions.updateNote(contentData.noteId, contentData.markdown);
-        console.log('🔄 Update result:', result ? 'success' : 'failed');
-      } else {
-        console.log('❌ No content data extracted for node');
-      }
-    }
-    
-    console.log('✅ saveModifiedNodes completed');
-  }
   
   // Determine appropriate timestamp for new nodes
   function getTimestampForNewNode(node, pos) {
     // For timeline-now content, always use current time
     if (node.attrs?.class === 'timeline-now') {
-      console.log('📅 Using current time for timeline-now node');
       return new Date();
     }
     
@@ -281,7 +258,6 @@
     doc.descendants((sibling, siblingPos) => {
       if (siblingPos < pos && sibling.attrs?.timestamp && sibling.attrs?.noteId) {
         parentTimestamp = sibling.attrs.timestamp;
-        console.log(`📅 Found sibling timestamp: ${parentTimestamp} at pos ${siblingPos}`);
       }
     });
     
@@ -290,12 +266,10 @@
       const [hours, minutes] = parentTimestamp.split(':').map(Number);
       const inheritedDate = new Date();
       inheritedDate.setHours(hours, minutes, 0, 0);
-      console.log(`📅 Inheriting timestamp from sibling: ${inheritedDate.toISOString()}`);
       return inheritedDate;
     }
     
     // Fallback to current time
-    console.log('📅 No sibling timestamp found, using current time');
     return new Date();
   }
   
@@ -452,6 +426,8 @@
     
     return timelinePos !== null && pos < timelinePos;
   }
+  
+
   
   function logout() {
     authActions.logout();

@@ -1,0 +1,94 @@
+JSON format: {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "attrs": {
+          "timestamp": null,
+          "noteId": null,
+          "class": "past-content"
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "Start writing your thoughts..."
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "attrs": {
+          "timestamp": null,
+          "noteId": null,
+          "class": "timeline-now"
+        },
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "timeline"
+              }
+            ],
+            "text": "​- bullet point"
+          }
+        ]
+      },
+      {
+        "type": "bulletList",
+        "content": [
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "attrs": {
+                  "timestamp": null,
+                  "noteId": null,
+                  "class": "timeline-now"
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "bullet point!"
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "attrs": {
+                          "timestamp": null,
+                          "noteId": null,
+                          "class": "timeline-now"
+                        },
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "and a nested one"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "attrs": {
+          "timestamp": null,
+          "noteId": null,
+          "class": "future-content"
+        }
+      }
+    ]
+  }
