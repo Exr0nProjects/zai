@@ -8,24 +8,44 @@ export default defineConfig({
     tailwindcss(),
     sveltekit(),
     SvelteKitPWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}']
-      },
-      manifest: {
-        name: 'zai - Notes App',
-        short_name: 'zai',
-        description: 'Your personal notes app with offline support',
-        theme_color: '#2563eb',
-        background_color: '#f9fafb',
-        display: 'standalone',
-        icons: [
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
+        runtimeCaching: [
           {
-            src: '/favicon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml'
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts-cache',
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
+              },
+              cacheKeyWillBeUsed: async ({ request }) => {
+                return `${request.url}`
+              }
+            }
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'gstatic-fonts-cache',
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
+              }
+            }
           }
         ]
+      },
+      manifest: false, // Use static manifest.json file instead
+      devOptions: {
+        enabled: true,
+        type: 'module'
       }
     })
   ]

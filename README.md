@@ -1,38 +1,53 @@
-# sv
+# zai
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+A collaborative timeline-based notes app built with SvelteKit, TipTap editor, and Y.js CRDT. Features real-time collaboration, offline persistence, and clean typography.
 
-## Creating a project
+## Features
 
-If you're seeing this, you've probably already done this step. Congrats!
+- **100% Serverless**: No servers to maintain, scales automatically with Supabase
+- **Real-time Collaboration**: Multiple users can edit simultaneously with Y.js CRDT
+- **Timeline Navigation**: "Jump to Now" button to navigate timeline markers
+- **Rich Text Editing**: Bullet lists, todo lists, and timeline markers
+- **Offline Support**: IndexedDB persistence with automatic cloud sync
+- **Authentication**: Secure SMS/phone verification via Supabase
+- **Beautiful Typography**: Lora font with optimized reading experience
 
-```sh
-# create a new project in the current directory
-npx sv create
+## Setup
 
-# create a new project in my-app
-npx sv create my-app
+1. Install dependencies:
+```bash
+bun install
 ```
+
+2. Set up environment variables (create `.env` file):
+```bash
+VITE_SUPABASE_URL=https://your-project-id.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key-here
+```
+
+3. Configure Supabase:
+   - Enable Phone authentication in Supabase Dashboard
+   - Configure Twilio for SMS verification
+   - Run `supabase-schema.sql` in your Supabase SQL editor
+   - Enable Realtime for the documents table
 
 ## Developing
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+Start the development server:
+```bash
+bun run dev
 ```
+
+That's it! The app is now fully serverless. Open multiple browser tabs with different users to test collaborative editing!
 
 ## Building
 
-To create a production version of your app:
-
-```sh
-npm run build
+To create a production version:
+```bash
+bun run build
 ```
 
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+Preview the build:
+```bash
+bun run preview
+```

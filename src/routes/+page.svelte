@@ -9,7 +9,12 @@
   import Collaboration from '@tiptap/extension-collaboration';
   import * as Y from 'yjs';
   import { IndexeddbPersistence } from 'y-indexeddb';
+  import { SupabaseProvider } from '$lib/providers/SupabaseProvider.js';
+  import { user, authActions } from '$lib/stores/auth.js';
   import { TimelineMark } from '$lib/tiptap/TimelineMark.js';
+  
+  // Online/offline detection
+  let isOnline = true;
   
   let searchQuery = '';
   let editor;
@@ -21,8 +26,16 @@
   // Y.js document for collaboration
   const ydoc = new Y.Doc();
   let indexeddbProvider;
+  let supabaseProvider;
   
   onMount(() => {
+    // Check online status
+    isOnline = navigator.onLine;
+    
+    // Listen for online/offline events
+    window.addEventListener('online', () => isOnline = true);
+    window.addEventListener('offline', () => isOnline = false);
+    
     // Initialize Tiptap editor with basic extensions
     editor = new Editor({
       element: element,
@@ -54,6 +67,14 @@
     // Initialize IndexedDB persistence for offline storage
     indexeddbProvider = new IndexeddbPersistence('timeline-notes', ydoc);
     
+    // Initialize Supabase provider for serverless real-time collaboration
+    const documentName = 'timeline-notes'; // Simple document name per user
+    
+    // Initialize Supabase provider when user is available
+    if ($user) {
+      supabaseProvider = new SupabaseProvider(documentName, ydoc, $user);
+    }
+    
     // Set initial content only once when Y.js document is synced
     indexeddbProvider.whenSynced.then(() => {
       if (ydoc.getMap('config').get('initialContentLoaded') !== true && editor) {
@@ -76,6 +97,10 @@
   onDestroy(() => {
     if (editor) {
       editor.destroy();
+    }
+    // Clean up Supabase provider
+    if (supabaseProvider) {
+      supabaseProvider.destroy();
     }
     // Clean up IndexedDB provider
     if (indexeddbProvider) {
@@ -145,24 +170,28 @@
     }
   }
   
-  function focusAtTimeline() {
-    if (editor && timelinePosition !== null) {
-      editor.commands.focus();
-      editor.commands.setTextSelection(timelinePosition);
+  function focusAtEnd() {
+    if (editor) {
+      // Focus at the very end of the document
+      editor.commands.focus('end');
       
-      // Scroll the timeline marker into view
+      // Calculate position to center the last content line in viewport
       setTimeout(() => {
-        const timelineElement = document.querySelector('.timeline-marker');
-        if (timelineElement) {
-          timelineElement.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'center' 
+        const proseMirror = document.querySelector('.ProseMirror');
+        if (proseMirror) {
+          // Get the actual content height (excluding bottom padding)
+          const contentHeight = proseMirror.scrollHeight - window.innerHeight; // Remove 100vh bottom padding
+          const viewportHeight = window.innerHeight;
+          
+          // Center the last line of content in the viewport
+          const targetScroll = contentHeight - (viewportHeight / 2);
+          
+          window.scrollTo({ 
+            top: Math.max(0, targetScroll), 
+            behavior: 'smooth' 
           });
         }
       }, 100);
-    } else if (editor) {
-      // If no timeline found, focus at end
-      editor.commands.focus('end');
     }
   }
   
@@ -172,13 +201,45 @@
       editor.commands.toggleTaskList();
     }
   }
+  
+  function logout() {
+    authActions.logout();
+  }
 </script>
 
-<!-- Fullscreen Editor -->
-<div class="fixed inset-0 bg-white">
+<!-- Floating Top Controls -->
+<div class="fixed top-4 left-4 right-4 z-50 pointer-events-none">
+  <div class="flex items-start justify-between">
+    <!-- Left: Phone number (red on hover) -->
+    <div class="pointer-events-auto opacity-10 hover:opacity-100 transition-opacity duration-200">
+      <button 
+        on:click={logout}
+        class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2 transition-all duration-200"
+      >
+        <div class="text-sm font-medium text-gray-900 hover:text-red-600 transition-colors">
+          {$user?.phone || $user?.email || 'Loading...'}
+        </div>
+      </button>
+    </div>
+    
+    <!-- Right: zai with online indicator -->
+    <div class="pointer-events-auto opacity-10 hover:opacity-100 transition-opacity duration-200">
+      <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2 flex items-center space-x-2">
+        <div class="text-sm text-gray-600 font-light tracking-wide">zai</div>
+        <div 
+          class="w-1.5 h-1.5 rounded-full {isOnline ? 'bg-green-500' : 'bg-gray-300'} transition-colors duration-200"
+          title={isOnline ? 'Online' : 'Offline'}
+        ></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Editor with internal spacing -->
+<div class="bg-white">
   <div 
     bind:this={element}
-    class="h-full w-full prose max-w-prose mx-auto focus-within:outline-none p-8 overflow-y-auto"
+    class="prose max-w-prose mx-auto focus-within:outline-none px-8"
   />
 </div>
 
@@ -204,9 +265,9 @@
       </button>
     </div>
     
-    <!-- Focus Timeline Button -->
+    <!-- Go to End Button -->
     <button
-      on:click={focusAtTimeline}
+      on:click={focusAtEnd}
       class="bg-blue-600/90 backdrop-blur-md text-white rounded-full p-3 text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors flex items-center justify-center shadow-lg"
     >
       <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -230,7 +291,7 @@
 <style>
   :global(.ProseMirror) {
     outline: none;
-    padding: 1rem;
+    padding: 50vh 1rem 100vh 1rem; /* Half screen top, full screen bottom */
     line-height: 1.25;
     height: 100%;
     font-family: 'Lora', serif;
