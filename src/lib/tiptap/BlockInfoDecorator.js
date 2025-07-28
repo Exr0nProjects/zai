@@ -8,10 +8,6 @@ export const BlockInfoDecorator = Extension.create({
   addProseMirrorPlugins() {
     // Helper functions outside of the plugin
     const showBlockTooltip = (event, attrs) => {
-      // Check if tooltips are enabled via CSS variable
-      const tooltipDisplay = getComputedStyle(document.documentElement).getPropertyValue('--block-tooltips').trim();
-      if (tooltipDisplay === 'none') return;
-      
       hideBlockTooltip(); // Remove any existing tooltip
       
       const tooltip = document.createElement('div');
