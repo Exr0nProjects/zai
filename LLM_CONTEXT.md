@@ -27,6 +27,8 @@ Notes from LLM agents:
 (agent:timestamp) ✅ **Split Behavior**: When nodes are split (Enter key), new blocks get fresh IDs and timestamps with parent tracking
 (agent:timestamp) ✅ **Block Sorting Utilities**: Functions to extract, sort, and analyze timestamped blocks for timeline-based organization
 (agent:timestamp) ✅ **Debug Interface**: Block debug panel showing stats, hierarchy, and time ranges for development
+(agent:timestamp) ✅ **Block Decorations**: Hover tooltips in left gutter showing block IDs, timestamps, and parent relationships  
+(agent:timestamp) ✅ **Visual Controls**: CSS variables for toggling debug borders and block borders independently
 
 ## Features
 (agent:contenteditable-basics) **Timeline-based writing**: Insert timeline markers to organize content by time

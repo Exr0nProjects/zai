@@ -77,16 +77,7 @@ export const BlockInfoDecorator = Extension.create({
             'data-created-at': node.attrs.createdAt,
             'data-parent-id': node.attrs.parentId || 'none',
           });
-          decorations.push(decoration);
-          
-          // Add a small indicator in the left margin
-          const indicatorDecoration = Decoration.widget(pos, () => {
-            const indicator = document.createElement('div');
-            indicator.className = 'block-indicator';
-            indicator.innerHTML = '•';
-            return indicator;
-          }, { side: -1 });
-          decorations.push(indicatorDecoration);
+                        decorations.push(decoration);
         }
       });
       

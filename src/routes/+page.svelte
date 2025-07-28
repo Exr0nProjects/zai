@@ -29,6 +29,7 @@
   import { ExtendedTaskItem } from '$lib/tiptap/ExtendedTaskItem.js';
   import { BlockInfoDecorator } from '$lib/tiptap/BlockInfoDecorator.js';
   import { TimestampPlugin } from '$lib/tiptap/TimestampPlugin.js';
+  import { MarkdownClipboard } from '$lib/tiptap/MarkdownClipboard.js';
   import ListKeymap from '@tiptap/extension-list-keymap';
   import { initializeSnowflakeGenerator } from '$lib/utils/snowflake.js';
   import { getAllBlocks, sortBlocksByTimestamp, getBlockStats } from '$lib/utils/blockSorting.js';
@@ -112,6 +113,7 @@
         TimelineMark,
         BlockInfoDecorator,
         TimestampPlugin, // Automatically adds timestamps without interfering with keymaps
+        MarkdownClipboard, // Copy/cut as markdown instead of HTML
         Placeholder.configure({
           placeholder: 'What do you think?',
         }),
@@ -136,12 +138,12 @@
         ydoc.getMap('config').set('initialContentLoaded', true);
         editor.commands.setContent(getInitialContent());
         
-        // Initialize block IDs for existing content after a short delay
+        // Focus the editor after initialization (TimestampPlugin will handle IDs automatically)
         setTimeout(() => {
-          initializeExistingBlocks();
-          // Focus the editor after initialization
           editor.commands.focus();
-        }, 100);
+          // Auto-trigger pin button behavior on load
+          focusAtEnd();
+        }, 200);
       }
     });
     
@@ -190,28 +192,7 @@
     ydoc.destroy();
   });
   
-  function initializeExistingBlocks() {
-    if (!editor) return;
-    
-    // Add IDs and timestamps to any existing blocks that don't have them
-    editor.state.doc.descendants((node, pos) => {
-      if (['paragraph', 'listItem', 'taskItem', 'bulletList', 'taskList'].includes(node.type.name)) {
-        if (!node.attrs.blockId) {
-          const blockId = generateBlockId();
-          const timestamp = getCurrentTimestamp();
-          
-          editor.chain()
-            .focus(pos)
-            .updateAttributes(node.type.name, {
-              blockId,
-              createdAt: timestamp,
-              parentId: null,
-            })
-            .run();
-        }
-      }
-    });
-  }
+  // Removed initializeExistingBlocks - TimestampPlugin handles this automatically without duplication
 
   function sortBlocksByTimestampAction(ascending = true) {
     if (!editor) return;
@@ -256,10 +237,6 @@
           type: 'paragraph',
           marks: [{ type: 'timeline' }],
           content: []
-        },
-        {
-          type: 'paragraph',
-          content: []
         }
       ]
     };
@@ -300,28 +277,86 @@
   }
   
   function focusAtEnd() {
-    if (editor) {
-      // Focus at the very end of the document
+    if (!editor) return;
+    
+    // Get current document state
+    const { doc } = editor.state;
+    const docSize = doc.content.size;
+    
+    // Count existing paragraphs at the end
+    let trailingEmptyParagraphs = 0;
+    let lastPos = docSize;
+    
+    // Walk backwards from the end to count empty paragraphs
+    for (let pos = docSize - 2; pos >= 0; pos--) {
+      try {
+        const node = doc.nodeAt(pos);
+        if (node && node.type.name === 'paragraph' && node.textContent.trim() === '') {
+          trailingEmptyParagraphs++;
+          lastPos = pos;
+        } else if (node && node.type.name === 'paragraph') {
+          // Hit a non-empty paragraph, stop counting
+          break;
+        }
+      } catch (e) {
+        break;
+      }
+    }
+    
+    // Ensure exactly 2 empty paragraphs at the end
+    if (trailingEmptyParagraphs < 2) {
+      // Add top-level paragraphs to reach 2
+      const needed = 2 - trailingEmptyParagraphs;
+      const { tr } = editor.state;
+      
+      for (let i = 0; i < needed; i++) {
+        // Insert at document end as top-level paragraph
+        const paragraph = editor.state.schema.nodes.paragraph.create();
+        tr.insert(tr.doc.content.size, paragraph);
+      }
+      
+      editor.view.dispatch(tr);
+    } else if (trailingEmptyParagraphs > 2) {
+      // Remove excess paragraphs from the end
+      const toRemove = trailingEmptyParagraphs - 2;
+      const { tr } = editor.state;
+      
+      // Walk backwards and remove excess empty paragraphs
+      let removed = 0;
+      for (let pos = tr.doc.content.size - 2; pos >= 0 && removed < toRemove; pos--) {
+        try {
+          const node = tr.doc.nodeAt(pos);
+          if (node && node.type.name === 'paragraph' && node.textContent.trim() === '') {
+            tr.delete(pos, pos + node.nodeSize);
+            removed++;
+          }
+        } catch (e) {
+          break;
+        }
+      }
+      
+      editor.view.dispatch(tr);
+    }
+    
+    // Focus the last paragraph and scroll to it
+    setTimeout(() => {
       editor.commands.focus('end');
       
-      // Calculate position to center the last content line in viewport
-      setTimeout(() => {
-        const proseMirror = document.querySelector('.ProseMirror');
-        if (proseMirror) {
-          // Get the actual content height (excluding bottom padding)
-          const contentHeight = proseMirror.scrollHeight - window.innerHeight; // Remove 100vh bottom padding
-          const viewportHeight = window.innerHeight;
-          
-          // Center the last line of content in the viewport
-          const targetScroll = contentHeight - (viewportHeight / 2);
-          
-          window.scrollTo({ 
-            top: Math.max(0, targetScroll), 
-            behavior: 'smooth' 
-          });
-        }
-      }, 100);
-    }
+      const proseMirror = document.querySelector('.ProseMirror');
+      if (proseMirror) {
+        // Get the actual content height (excluding bottom padding)
+        const contentHeight = proseMirror.scrollHeight - window.innerHeight;
+        const viewportHeight = window.innerHeight;
+        
+        // Center the last line of content in the viewport
+        const targetScroll = contentHeight - (viewportHeight / 2);
+        
+        window.scrollTo({ 
+          top: Math.max(0, targetScroll), 
+          behavior: 'smooth' 
+        });
+      }
+    }, 100);
   }
   
   function addTodoList() {
@@ -480,6 +515,12 @@
 {/if}
 
 <style>
+  :global(:root) {
+    --debug-borders: none; /* Change to "1px solid red" to show debug borders */
+    --block-borders: none; /* Change to "1px solid #000" to show block borders */
+    --block-hover-bg: none; /* Change to "rgba(0, 0, 0, 0.02)" to show hover background */
+  }
+
   :global(.ProseMirror) {
     outline: none;
     padding: 30vh 1rem 100vh 1rem; /* Half screen top, full screen bottom */
@@ -491,7 +532,7 @@
 
   /* Block styling with borders */
   :global(.block-with-info) {
-    border: 1px solid #000;
+    border: var(--block-borders);
     border-radius: 0.375rem; /* rounded-md */
     padding: 0.5rem;
     margin: 0.25rem 0;
@@ -499,8 +540,8 @@
   }
 
   :global(.block-with-info:hover) {
-    background-color: rgba(0, 0, 0, 0.02);
-    border-color: #4f46e5; /* Indigo border on hover */
+    background-color: var(--block-hover-bg);
+    border-color: #4f46e5; /* Indigo border on hover (only when borders are enabled) */
   }
 
   /* Block info tooltip styling */
@@ -538,21 +579,53 @@
     font-weight: 600;
   }
 
-  /* Block indicator in left gutter */
-  :global(.block-indicator) {
+  /* Fix bullet point positioning to stay at top of first line */
+  :global(.ProseMirror ul),
+  :global(.ProseMirror ol) {
+    padding-left: 1.5rem;
+  }
+  
+  :global(.ProseMirror li) {
+    position: relative;
+    list-style-position: outside;
+    margin-bottom: 0.25rem;
+  }
+  
+  :global(.ProseMirror ul li) {
+    list-style-type: none;
+    position: relative;
+  }
+  
+  :global(.ProseMirror ul li::before) {
+    content: "-";
     position: absolute;
-    left: -20px;
-    color: #6b7280;
-    font-size: 1rem;
-    line-height: 1;
-    opacity: 0.3;
-    transition: opacity 0.2s;
+    left: -1.25rem;
+    top: 0.6rem;
+    color: currentColor;
+    font-weight: normal;
   }
-
-  :global(.block-with-info:hover .block-indicator) {
-    opacity: 1;
-    color: #4f46e5;
+  
+  :global(.ProseMirror ul li::marker),
+  :global(.ProseMirror ol li::marker) {
+    position: absolute;
+    top: 0;
   }
+  
+  /* Task list specific styling */
+  :global(.ProseMirror ul[data-type="taskList"] li) {
+    list-style: none;
+    position: relative;
+    padding-left: 1.5rem;
+  }
+  
+  :global(.ProseMirror > ul[data-type="taskList"] li input[type="checkbox"]) {
+    position: absolute;
+    left: 0;
+    top: 0.125rem; /* Align with first line of text */
+    margin: 0;
+    z-index: 1;
+  }
+  
   
   /* Apply consistent padding and remove margins from all paragraph-like elements */
   :global(.ProseMirror p),
@@ -608,15 +681,17 @@
   
   :global(.ProseMirror ul[data-type="taskList"] li) {
     display: flex;
-    align-items: center; /* Center items vertically */
+    align-items: flex-start; /* Center items vertically */
   }
   
   :global(.ProseMirror ul[data-type="taskList"] li > label) {
-    flex: 0 0 auto;
+    width: 1.5rem;
+    height: 1.75rem;
     margin-right: 0.5rem;
     user-select: none;
     display: flex;
     align-items: center;
+          border: var(--debug-borders);
   }
   
   :global(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]) {
@@ -650,7 +725,7 @@
   }
   
   :global(.ProseMirror ul[data-type="taskList"] li > div) {
-    flex: 1 1 auto;
+          border: var(--debug-borders);
   }
   
   /* Bullet list styles */
