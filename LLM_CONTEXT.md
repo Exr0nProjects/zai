@@ -33,6 +33,8 @@ Notes from LLM agents:
 (agent:feat:links) ✅ **Link Bubble Menu**: Contextual menu that appears when cursor is inside a link with edit, remove, and open actions
 (agent:feat:links) ✅ **Link Dialog**: Modal interface for adding and editing links with URL input, keyboard shortcuts (Enter/Escape)
 (agent:feat:links) ✅ **Smart Link Behavior**: Handles both selected text linking and standalone URL insertion, click selection enabled
+(agent:feat:tags) ✅ **Tag System**: TipTap mention extension configured for hashtags with # trigger, web worker for tag extraction, and real-time tag suggestions
+(agent:feat:tags) ✅ **Tag Keyboard Navigation**: Fixed Enter key priority issue where default newline handler was intercepting tag selection - used TipTap's extend() method with addKeyboardShortcuts() to override priority, working with the ecosystem rather than against it
 
 ## Features
 (agent:contenteditable-basics) **Timeline-based writing**: Insert timeline markers to organize content by time
@@ -44,6 +46,7 @@ Notes from LLM agents:
 (agent:timestamp) **Timestamp Sorting**: Blocks can be sorted chronologically with debug tools for viewing block hierarchy
 (agent:feat:links) **Hyperlink Support**: Create and edit links with accent color styling, hover underlines, and right-click editing
 (agent:feat:links) **Link Navigation**: Click to open links, cursor navigation with arrow keys, contextual bubble menu for editing
+(agent:feat:tags) **Tag Mentions**: Type # to trigger tag suggestions, web worker automatically extracts and indexes hashtags from document content, visual loading indicator during processing
 
 ## Development Commands
 (agent:contenteditable-basics) Install dependencies: `bun install`
@@ -72,6 +75,8 @@ Notes from LLM agents:
 (agent:feat:links) **BubbleMenu Integration**: Contextual floating menu using @tiptap/extension-bubble-menu that appears when cursor is in link
 (agent:feat:links) **Link State Management**: Modal dialog with proper keyboard handling, URL validation, and state cleanup
 (agent:feat:links) **Smart Link Detection**: Automatic protocol handling, link updating vs creation based on selection and context
+(agent:feat:tags) **Tag System Architecture**: Web worker-based tag extraction using regex pattern `/(?:^|\s)#([^\s#]+)/g`, TipTap mention extension with tippy.js suggestions, debounced content processing (2s delay), reactive Svelte stores for tag state management
+(agent:feat:tags) **Tag Navigation Priority Fix**: Critical lesson learned about TipTap keyboard priority - default Enter handler (newline creation) has higher priority than suggestion system. Fixed by extending Mention extension with addKeyboardShortcuts() that detects active suggestion state and returns false to let TipTap's suggestion utility handle Enter selection. Tab works as Enter alias, Ctrl+N/P for vim navigation, all arrow keys handled by TipTap natively.
 
 ## Current Serverless Integration
 (agent:contenteditable-basics) ✅ **Supabase Authentication**: SMS/phone verification with secure JWT tokens and session management
@@ -102,3 +107,10 @@ Notes from LLM agents:
 (agent:contenteditable-basics) Timeline positioning system in place for advanced time-based navigation features
 (agent:timestamp) Build chronological document views and timeline-based navigation using the new block timestamp system
 (agent:timestamp) Add block reordering capabilities based on timestamps for temporal document organization
+
+## TODO: System Interaction Monitoring
+(agent:feat:tags) **Performance Risk - Collaboration**: Tag extraction runs on EVERY editor update including collaborative changes - consider adding collaboration-aware filtering to only process local changes using `!transaction.getMeta('y-sync$')` check
+(agent:feat:tags) **Accessibility Risk - Tab Navigation**: KeyboardNavigationPlugin removes tabindex from checkboxes - monitor impact on keyboard users who need to navigate todo lists, may need more granular control
+(agent:feat:tags) **Memory Risk - Web Worker Cleanup**: Multiple async systems (tag worker, debounced extraction, collaborative sync) need careful monitoring for memory leaks during heavy collaborative sessions  
+(agent:feat:tags) **Keyboard Priority Stack**: Monitor interaction between multiple keyboard handlers (Tags: Enter priority override, Links: Cmd+K, Lists: Tab/Shift+Tab, Tasks: built-in) - should work harmoniously but worth testing edge cases
+(agent:feat:tags) **Performance Optimization**: Consider tracking tag processing time for large documents and implementing performance monitoring, especially for documents with hundreds of hashtags

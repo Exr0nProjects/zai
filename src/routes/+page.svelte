@@ -36,6 +36,12 @@
   import BubbleMenu from '@tiptap/extension-bubble-menu';
   import { initializeSnowflakeGenerator } from '$lib/utils/snowflake.js';
   import { getAllBlocks, sortBlocksByTimestamp, getBlockStats } from '$lib/utils/blockSorting.js';
+  import { TagMention } from '$lib/tiptap/TagMention.js';
+  import { TagParser } from '$lib/tiptap/TagParser.js';
+  import { InputRuleTagParser } from '$lib/tiptap/InputRuleTagParser.js';
+  import { KeyboardNavigation } from '$lib/tiptap/KeyboardNavigationPlugin.js';
+  import { tagManager, isTagProcessing, tagStats } from '$lib/utils/tagManager.js';
+  import { dev } from '$app/environment';
   
   // Online/offline detection
   let isOnline = true;
@@ -359,6 +365,10 @@
         TimestampPlugin, // Automatically adds timestamps without interfering with keymaps
         MarkdownClipboard, // Copy/cut as markdown instead of HTML
         MarkdownPaste, // Parse pasted markdown into proper nodes
+        TagMention, // Tag mentions with # trigger
+        TagParser, // Auto-convert hashtags to tag mentions
+        InputRuleTagParser, // Convert hashtags on typing
+        KeyboardNavigation, // Remove tab index from irrelevant elements
         Placeholder.configure({
           placeholder: 'What do you think?',
         }),
@@ -475,21 +485,42 @@
       }
     });
     
-    // Update block stats periodically
+    // Update block stats and extract tags periodically
     if (editor) {
       const updateStats = () => {
         const blocks = getAllBlocks(editor);
         blockStats = getBlockStats(blocks);
       };
       
+      const extractTags = async () => {
+        if (!editor) return;
+        
+        try {
+          // Use HTML content instead of text to preserve tag mentions
+          const content = editor.getHTML();
+          await tagManager.extractTags(content);
+        } catch (error) {
+          console.error('Error extracting tags:', error);
+        }
+      };
+      
       // Update stats on editor changes
-      editor.on('update', updateStats);
+      editor.on('update', () => {
+        updateStats();
+        // Debounce tag extraction to avoid excessive processing
+        clearTimeout(window.tagExtractionTimeout);
+        window.tagExtractionTimeout = setTimeout(extractTags, 2000);
+      });
       
       // Update stats every 10 seconds
       const statsInterval = setInterval(updateStats, 10000);
       
+      // Initial tag extraction
+      setTimeout(extractTags, 1000);
+      
       return () => {
         clearInterval(statsInterval);
+        clearTimeout(window.tagExtractionTimeout);
       };
     }
 
@@ -529,6 +560,12 @@
   });
 
   onDestroy(() => {
+    // Clear timeouts
+    clearTimeout(window.tagExtractionTimeout);
+    
+    // Cleanup tag manager
+    tagManager.destroy();
+    
     if (editor) {
       editor.destroy();
     }
@@ -834,6 +871,15 @@
   }
 </script>
 
+<!-- Development Version Tag -->
+{#if dev}
+  <div class="fixed top-4 right-4 z-[60] pointer-events-none">
+    <div class="bg-purple-600/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded shadow-lg font-mono">
+      priority-enter-v10
+    </div>
+  </div>
+{/if}
+
 <!-- Floating Top Controls -->
 <div class="fixed top-4 left-4 right-4 z-50 pointer-events-none">
   <div class="flex items-start justify-between">
@@ -849,8 +895,16 @@
       </button>
     </div>
     
-    <!-- Right: Debug button and zai with online indicator -->
+    <!-- Right: Tag processing indicator, Debug button and zai with online indicator -->
     <div class="flex items-center space-x-2 pointer-events-auto">
+      <!-- Tag Processing Indicator -->
+      {#if $isTagProcessing}
+        <div class="bg-blue-100/90 backdrop-blur-md shadow-lg rounded-full p-2 animate-pulse"
+             title="Processing tags...">
+          <div class="text-xs">🏷️</div>
+        </div>
+      {/if}
+      
       <!-- Debug Button -->
       <button
         on:click={toggleBlockDebug}
@@ -1359,6 +1413,27 @@
     color: #adb5bd;
     pointer-events: none;
     height: 0;
+  }
+  
+  /* Tag mention styling */
+  :global(.tag-mention) {
+    background-color: #dbeafe;
+    color: #1e40af;
+    padding: 0.125rem 0.25rem;
+    border-radius: 0.25rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  :global(.tag-mention:hover) {
+    background-color: #bfdbfe;
+    color: #1d4ed8;
+  }
+  
+  /* Tag suggestions styling */
+  :global(.tag-suggestions) {
+    z-index: 999;
   }
   
   :global(.timeline-marker) {
