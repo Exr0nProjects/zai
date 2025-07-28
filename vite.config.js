@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     host: true,
     allowedHosts: [
-      '835d2af970b0.ngrok-free.app'
+      '4327ee33a22d.ngrok-free.app'
     ]
   },
   plugins: [

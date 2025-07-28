@@ -1,51 +1,44 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
+  import { dev } from '$app/environment';
   import { Editor } from '@tiptap/core';
   import Document from '@tiptap/extension-document';
   import Text from '@tiptap/extension-text';
-  import { ExtendedHeading } from '$lib/tiptap/ExtendedHeading.js';
-  import Bold from '@tiptap/extension-bold';
-  import Italic from '@tiptap/extension-italic';
-  import Code from '@tiptap/extension-code';
-  import Strike from '@tiptap/extension-strike';
-  import Blockquote from '@tiptap/extension-blockquote';
-  import HorizontalRule from '@tiptap/extension-horizontal-rule';
-  import OrderedList from '@tiptap/extension-ordered-list';
-  import CodeBlock from '@tiptap/extension-code-block';
-  import HardBreak from '@tiptap/extension-hard-break';
-  import Dropcursor from '@tiptap/extension-dropcursor';
-  import Gapcursor from '@tiptap/extension-gapcursor';
-  import Placeholder from '@tiptap/extension-placeholder';
+  import StarterKit from '@tiptap/extension-starter-kit';
+  import TaskList from '@tiptap/extension-task-list';
+  import TaskItem from '@tiptap/extension-task-item';
   import Collaboration from '@tiptap/extension-collaboration';
+  import Placeholder from '@tiptap/extension-placeholder';
+  import ListKeymap from '@tiptap/extension-list-keymap';
   import * as Y from 'yjs';
   import { IndexeddbPersistence } from 'y-indexeddb';
   import { SupabaseProvider } from '$lib/providers/SupabaseProvider.js';
-  import { user, authActions } from '$lib/stores/auth.js';
+  import { user } from '$lib/stores/auth.js';
+  import { authActions } from '$lib/stores/auth.js';
   import { TimelineMark } from '$lib/tiptap/TimelineMark.js';
+  import { initializeSnowflakeGenerator } from '$lib/utils/snowflake.js';
+  import { getAllBlocks, sortBlocksByTimestamp, getBlockStats } from '$lib/utils/blockSorting.js';
+  
+  // Extended nodes with metadata
   import { ExtendedParagraph } from '$lib/tiptap/ExtendedParagraph.js';
   import { ExtendedBulletList } from '$lib/tiptap/ExtendedBulletList.js';
   import { ExtendedTaskList } from '$lib/tiptap/ExtendedTaskList.js';
   import { ExtendedListItem } from '$lib/tiptap/ExtendedListItem.js';
   import { ExtendedTaskItem } from '$lib/tiptap/ExtendedTaskItem.js';
+  import { ExtendedHeading } from '$lib/tiptap/ExtendedHeading.js';
+  
+  // Custom plugins
   import { BlockInfoDecorator } from '$lib/tiptap/BlockInfoDecorator.js';
   import { TimestampPlugin } from '$lib/tiptap/TimestampPlugin.js';
   import { MarkdownClipboard } from '$lib/tiptap/MarkdownClipboard.js';
   import { MarkdownPaste } from '$lib/tiptap/MarkdownPaste.js';
-  import ListKeymap from '@tiptap/extension-list-keymap';
-  import { initializeSnowflakeGenerator } from '$lib/utils/snowflake.js';
-  import { getAllBlocks, sortBlocksByTimestamp, getBlockStats } from '$lib/utils/blockSorting.js';
-  
-  // Online/offline detection
-  let isOnline = true;
-  
-  let searchQuery = '';
+
   let editor;
   let element;
+  let searchQuery = '';
+  let isOnline = false;
   
-  // Simple timeline management
-  let timelinePosition = null;
-  
-  // Block management
+  // Block debug state
   let blockStats = { total: 0, byType: {}, withParents: 0, orphaned: 0, timeRange: null };
   let showBlockDebug = false;
   
@@ -53,6 +46,13 @@
   const ydoc = new Y.Doc();
   let indexeddbProvider;
   let supabaseProvider;
+  
+  // Trigger jump behavior when user logs in
+  $: if ($user && editor) {
+    setTimeout(() => {
+      focusAtEnd();
+    }, 800); // Extra delay to ensure editor is fully loaded
+  }
   
   onMount(() => {
     // Initialize snowflake generator with user ID (if available)
@@ -62,66 +62,64 @@
     // Check online status
     isOnline = navigator.onLine;
     
-    // Listen for online/offline events
-    window.addEventListener('online', () => isOnline = true);
-    window.addEventListener('offline', () => isOnline = false);
-    
-    // Initialize Tiptap editor with basic extensions
     editor = new Editor({
       element: element,
       extensions: [
-        // TaskList first to handle `- [ ]` before BulletList handles `- `
+        Document,
+        Text,
+        StarterKit.configure({
+          history: false, // Y.js provides history
+          document: false, // Y.js provides document management
+          paragraph: false, // We use ExtendedParagraph
+          bulletList: false, // We use ExtendedBulletList
+          heading: false, // We use ExtendedHeading
+        }),
+        ExtendedParagraph,
+        ExtendedBulletList,
         ExtendedTaskList,
-        ExtendedTaskItem.configure({
+        ExtendedListItem,
+        ExtendedTaskItem,
+        ExtendedHeading,
+        TaskList,
+        TaskItem.configure({
           nested: true,
         }),
-        
-        // BulletList AFTER TaskList so TaskList gets priority for `- [ ]`
-        ExtendedBulletList,
-        
-        // Essential TipTap extensions (no History to avoid Y.js conflicts)
-        Document,
-        ExtendedParagraph,
-        Text,
-        HardBreak,
-        
-        // Typography
-        ExtendedHeading.configure({
-          levels: [1, 2, 3, 4, 5, 6],
-        }),
-        Bold,
-        Italic,
-        Strike,
-        Code,
-        CodeBlock,
-        Blockquote,
-        HorizontalRule,
-        
-        // Lists
-        OrderedList,
-        ExtendedListItem,
-        ListKeymap, // Provides Tab/Shift+Tab behavior for nested lists
-        
-        // UI
-        Dropcursor,
-        Gapcursor,
-        
-        // Y.js Collaboration extension (replaces History)
+        ListKeymap,
         Collaboration.configure({
           document: ydoc,
         }),
-        
+        Placeholder.configure({
+          placeholder: 'What are you thinking about?',
+        }),
         TimelineMark,
         BlockInfoDecorator,
-        TimestampPlugin, // Automatically adds timestamps without interfering with keymaps
-        MarkdownClipboard, // Copy/cut as markdown instead of HTML
-        MarkdownPaste, // Parse pasted markdown into proper nodes
-        Placeholder.configure({
-          placeholder: 'What do you think?',
-        }),
+        TimestampPlugin,
+        MarkdownClipboard,
+        MarkdownPaste,
       ],
+      editorProps: {
+        attributes: {
+          class: 'prose prose-lg max-w-none focus:outline-none min-h-screen py-8',
+        },
+      },
+      content: getInitialContent(),
       // No initial content - Y.js will manage document state
     });
+
+    // Prevent task checkboxes from triggering editor focus on mobile
+    setTimeout(() => {
+      const editorElement = document.querySelector('.ProseMirror');
+      if (editorElement) {
+        editorElement.addEventListener('click', (event) => {
+          // If clicking on a checkbox, prevent focus changes
+          if (event.target.type === 'checkbox' && event.target.closest('[data-type="taskList"]')) {
+            event.stopPropagation();
+            // Don't prevent default - we want the checkbox to still toggle
+            // Just prevent the click from bubbling up to focus the editor
+          }
+        }, true); // Use capture phase to catch it early
+      }
+    }, 100);
 
     // Initialize IndexedDB persistence for offline storage
     indexeddbProvider = new IndexeddbPersistence('timeline-notes', ydoc);
@@ -137,38 +135,37 @@
     // Set initial content only once when Y.js document is synced
     indexeddbProvider.whenSynced.then(() => {
       if (ydoc.getMap('config').get('initialContentLoaded') !== true && editor) {
-        ydoc.getMap('config').set('initialContentLoaded', true);
         editor.commands.setContent(getInitialContent());
+        ydoc.getMap('config').set('initialContentLoaded', true);
         
         // Focus the editor after initialization (TimestampPlugin will handle IDs automatically)
         setTimeout(() => {
           editor.commands.focus();
           // Auto-trigger pin button behavior on load
-          focusAtEnd();
-        }, 200);
+          setTimeout(() => {
+            focusAtEnd();
+          }, 50);
+        }, 50);
       }
     });
     
-    // Update block stats periodically
+    // Update block stats when editor content changes
     if (editor) {
-      const updateStats = () => {
-        const blocks = getAllBlocks(editor);
-        blockStats = getBlockStats(blocks);
-      };
-      
-      // Update stats on editor changes
-      editor.on('update', updateStats);
-      
-      // Update stats every 10 seconds
-      const statsInterval = setInterval(updateStats, 10000);
-      
-      return () => {
-        clearInterval(statsInterval);
-      };
+      editor.on('update', updateBlockStats);
+      updateBlockStats(); // Initial calculation
     }
-
-    // Set initial timeline position
-    updateTimelinePosition();
+    
+    // Handle auth state changes for Supabase provider
+    user.subscribe(async (currentUser) => {
+      if (currentUser && !supabaseProvider) {
+        // User logged in, create provider
+        supabaseProvider = new SupabaseProvider(documentName, ydoc, currentUser);
+      } else if (!currentUser && supabaseProvider) {
+        // User logged out, cleanup provider
+        supabaseProvider.destroy();
+        supabaseProvider = null;
+      }
+    });
     
     // Update timeline position every minute
     const timelineInterval = setInterval(updateTimelinePosition, 60000);
@@ -178,23 +175,67 @@
     };
   });
 
-  onDestroy(() => {
-    if (editor) {
-      editor.destroy();
+  function getInitialContent() {
+    return '<p></p>'; // Single empty paragraph to start
+  }
+
+  function updateBlockStats() {
+    if (!editor) return;
+    
+    const blocks = getAllBlocks(editor);
+    blockStats = getBlockStats(blocks);
+  }
+
+  function handleSearch() {
+    if (!searchQuery.trim() || !editor) return;
+    
+    // Simple search implementation
+    const { view } = editor;
+    const { state } = view;
+    const { doc } = state;
+    
+    let found = false;
+    let searchPos = 0;
+    
+    doc.descendants((node, pos) => {
+      if (found) return false;
+      
+      if (node.isText && node.text && node.text.toLowerCase().includes(searchQuery.toLowerCase())) {
+        const from = pos;
+        const to = pos + searchQuery.length;
+        
+        // Create selection at found text
+        const selection = editor.state.selection.constructor.create(
+          editor.state.doc, 
+          from, 
+          to
+        );
+        
+        // Apply selection and scroll into view
+        editor.view.dispatch(
+          editor.state.tr.setSelection(selection).scrollIntoView()
+        );
+        
+        found = true;
+        return false;
+      }
+    });
+    
+    if (!found) {
+      // Could show "not found" message
+      console.log('Text not found:', searchQuery);
     }
-    // Clean up Supabase provider
-    if (supabaseProvider) {
-      supabaseProvider.destroy();
-    }
-    // Clean up IndexedDB provider
-    if (indexeddbProvider) {
-      indexeddbProvider.destroy();
-    }
-    // Clean up Y.js document
-    ydoc.destroy();
-  });
-  
-  // Removed initializeExistingBlocks - TimestampPlugin handles this automatically without duplication
+  }
+
+  function updateTimelinePosition() {
+    if (!editor) return;
+    
+    // Find existing timeline mark and update its position
+    const currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    
+    // For now, just update if timeline mark exists
+    // Future: implement smart positioning based on time
+  }
 
   function sortBlocksByTimestampAction(ascending = true) {
     if (!editor) return;
@@ -202,160 +243,99 @@
     const blocks = getAllBlocks(editor);
     const sortedBlocks = sortBlocksByTimestamp(blocks, ascending);
     
-    console.log('📊 Block sorting:', {
-      total: blocks.length,
-      direction: ascending ? 'ascending' : 'descending',
-      blocks: sortedBlocks.map(b => ({
-        id: b.blockId,
-        type: b.nodeType,
-        created: new Date(b.createdAt).toLocaleString(),
-        content: b.content.slice(0, 50),
-      }))
-    });
+    console.log(`Sorted ${sortedBlocks.length} blocks ${ascending ? 'ascending' : 'descending'} by timestamp:`, sortedBlocks);
+    
+    // Update block stats after sorting
+    updateBlockStats();
   }
 
   function toggleBlockDebug() {
     showBlockDebug = !showBlockDebug;
-    if (showBlockDebug) {
-      const blocks = getAllBlocks(editor);
-      blockStats = getBlockStats(blocks);
-    }
+    updateBlockStats(); // Refresh stats when toggling
   }
 
-  function getInitialContent() {
-    return {
-      type: 'doc',
-      content: [
-        {
-          type: 'paragraph',
-          marks: [{ type: 'timeline' }],
-          content: []
-        }
-      ]
-    };
-  }
-  
-  function updateTimelinePosition() {
-    if (!editor) return;
-    
-    const { doc } = editor.state;
-    let timelinePos = null;
-    
-    // Find existing timeline mark
-    doc.descendants((node, pos) => {
-      if (node.marks.some(mark => mark.type.name === 'timeline')) {
-        timelinePos = pos;
-        return false; // Stop searching
-      }
-    });
-    
-    timelinePosition = timelinePos;
-  }
-  
-  function handleSearch() {
-    if (searchQuery.trim() && editor) {
-      // Simple text search within editor
-      const content = editor.getText();
-      const searchIndex = content.toLowerCase().indexOf(searchQuery.toLowerCase());
-      
-      if (searchIndex !== -1) {
-        // Focus editor and try to position cursor near found text
-        editor.commands.focus();
-        // Note: More sophisticated search/highlight would require additional extensions
-        console.log('Found text at position:', searchIndex);
-      } else {
-        console.log('Text not found');
-      }
-    }
-  }
-  
   function focusAtEnd() {
     if (!editor) return;
     
-    // Get current document state
+    // Count trailing empty paragraphs at end of document
     const { doc } = editor.state;
     const docSize = doc.content.size;
     
-    // Count existing paragraphs at the end
     let trailingEmptyParagraphs = 0;
-    let lastPos = docSize;
     
-    // Walk backwards from the end to count empty paragraphs
+    // Traverse backwards from end to count empty paragraphs
     for (let pos = docSize - 2; pos >= 0; pos--) {
-      try {
-        const node = doc.nodeAt(pos);
-        if (node && node.type.name === 'paragraph' && node.textContent.trim() === '') {
-          trailingEmptyParagraphs++;
-          lastPos = pos;
-        } else if (node && node.type.name === 'paragraph') {
-          // Hit a non-empty paragraph, stop counting
-          break;
-        }
-      } catch (e) {
-        break;
+      const resolved = doc.resolve(pos);
+      const node = resolved.node();
+      
+      if (node && node.type.name === 'paragraph' && (!node.content || node.content.size === 0)) {
+        trailingEmptyParagraphs++;
+      } else {
+        break; // Stop at first non-empty paragraph
       }
     }
     
-    // Ensure exactly 3 empty paragraphs at the end
+    // Ensure exactly 3 trailing empty paragraphs
     if (trailingEmptyParagraphs < 3) {
-      // Add top-level paragraphs to reach 3
-      const needed = 3 - trailingEmptyParagraphs;
-      const { tr } = editor.state;
+      // Add paragraphs to reach 3
+      const paragraphsToAdd = 3 - trailingEmptyParagraphs;
+      const tr = editor.state.tr;
       
-      for (let i = 0; i < needed; i++) {
-        // Insert at document end as top-level paragraph
+      for (let i = 0; i < paragraphsToAdd; i++) {
         const paragraph = editor.state.schema.nodes.paragraph.create();
         tr.insert(tr.doc.content.size, paragraph);
       }
       
       editor.view.dispatch(tr);
     } else if (trailingEmptyParagraphs > 3) {
-      // Remove excess paragraphs from the end
-      const toRemove = trailingEmptyParagraphs - 3;
-      const { tr } = editor.state;
+      // Remove excess paragraphs to have exactly 3
+      const paragraphsToRemove = trailingEmptyParagraphs - 3;
+      const tr = editor.state.tr;
       
-      // Walk backwards and remove excess empty paragraphs
-      let removed = 0;
-      for (let pos = tr.doc.content.size - 2; pos >= 0 && removed < toRemove; pos--) {
-        try {
-          const node = tr.doc.nodeAt(pos);
-          if (node && node.type.name === 'paragraph' && node.textContent.trim() === '') {
-            tr.delete(pos, pos + node.nodeSize);
-            removed++;
+      // Remove from the end backwards
+      for (let i = 0; i < paragraphsToRemove; i++) {
+        // Find and remove the last empty paragraph
+        for (let pos = tr.doc.content.size - 2; pos >= 0; pos--) {
+          const resolved = tr.doc.resolve(pos);
+          const node = resolved.node();
+          
+          if (node && node.type.name === 'paragraph' && (!node.content || node.content.size === 0)) {
+            const nodeStart = resolved.start() - 1;
+            const nodeEnd = resolved.end() + 1;
+            tr.delete(nodeStart, nodeEnd);
+            break;
           }
-        } catch (e) {
-          break;
         }
       }
       
       editor.view.dispatch(tr);
     }
     
-    // Focus the last paragraph and scroll to it
+    // Scroll first, then focus to prevent jumping
     setTimeout(() => {
-      editor.commands.focus('end');
-      
-      // Add a small delay to ensure focus is complete before scrolling
-      setTimeout(() => {
-        const proseMirror = document.querySelector('.ProseMirror');
-        if (proseMirror) {
-          // Force layout recalculation to ensure accurate measurements
-          proseMirror.offsetHeight;
-          
-          // Get the actual content height (excluding bottom padding)
-          const contentHeight = proseMirror.scrollHeight - window.innerHeight;
-          const viewportHeight = window.innerHeight;
-          
-          // Center the last line of content in the viewport
-          const targetScroll = contentHeight - (viewportHeight / 2);
-          
-          window.scrollTo({ 
-            top: Math.max(0, targetScroll), 
-            behavior: 'smooth' 
-          });
-        }
-      }, 50);
-    }, 150);
+      const proseMirror = document.querySelector('.ProseMirror');
+      if (proseMirror) {
+        // Force layout recalculation to ensure accurate measurements
+        proseMirror.offsetHeight;
+        
+        // Get the actual content height (excluding bottom padding)
+        const contentHeight = proseMirror.scrollHeight - window.innerHeight;
+        const viewportHeight = window.innerHeight;
+        
+        // Center the last line of content in the viewport
+        const targetScroll = contentHeight - (viewportHeight / 2);
+        
+        window.scrollTo({ 
+          top: Math.max(0, targetScroll), 
+          behavior: 'smooth' 
+        });
+        
+        // Focus after scroll animation completes
+        setTimeout(() => {
+          editor.commands.focus('end');
+        }, 600); // Wait for smooth scroll to complete
+      }
+    }, 200);
   }
   
   function addTodoList() {
@@ -373,30 +353,51 @@
 <!-- Floating Top Controls -->
 <div class="fixed top-4 left-4 right-4 z-50 pointer-events-none">
   <div class="flex items-start justify-between">
-    <!-- Left: Phone number (red on hover) -->
+    <!-- Left: Logout button -->
     <div class="pointer-events-auto opacity-10 hover:opacity-100 transition-opacity duration-200">
-      <button 
+      <button
         on:click={logout}
-        class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2 transition-all duration-200"
+        class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2"
       >
         <div class="text-sm font-medium text-gray-900 hover:text-red-600 transition-colors">
-          {$user?.phone || $user?.email || 'Loading...'}
+          sign out
         </div>
       </button>
     </div>
     
-    <!-- Right: zai with online indicator -->
-    <div class="pointer-events-auto opacity-10 hover:opacity-100 transition-opacity duration-200">
-      <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2 flex items-center space-x-2">
-        <div class="text-sm text-gray-600 font-light tracking-wide">zai</div>
-        <div 
-          class="w-1.5 h-1.5 rounded-full {isOnline ? 'bg-green-500' : 'bg-gray-300'} transition-colors duration-200"
-          title={isOnline ? 'Online' : 'Offline'}
-        ></div>
+    <!-- Right: Debug button and zai with online indicator -->
+    <div class="flex items-center space-x-2 pointer-events-auto">
+      <!-- Debug Button -->
+      <button
+        on:click={toggleBlockDebug}
+        class="opacity-10 hover:opacity-100 transition-opacity duration-200 bg-white/90 backdrop-blur-md shadow-lg rounded-full p-2"
+        title="Toggle block debug info"
+      >
+        <div class="text-xs">📊</div>
+      </button>
+      
+      <!-- Zai with online indicator -->
+      <div class="opacity-10 hover:opacity-100 transition-opacity duration-200">
+        <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2 flex items-center space-x-2">
+          <div class="text-sm text-gray-600 font-light tracking-wide">zai</div>
+          <div 
+            class="w-1.5 h-1.5 rounded-full {isOnline ? 'bg-green-500' : 'bg-gray-300'} transition-colors duration-200"
+            title={isOnline ? 'Online' : 'Offline'}
+          ></div>
+        </div>
       </div>
     </div>
   </div>
 </div>
+
+<!-- Dev Version Tag -->
+{#if dev}
+  <div class="fixed top-4 right-4 z-50 pointer-events-none">
+    <div class="bg-gray-900 text-white px-2 py-1 rounded text-xs font-mono">
+      Tooltip Flag Mobile Fix
+    </div>
+  </div>
+{/if}
 
 <!-- Editor with internal spacing -->
 <div class="bg-white">
@@ -453,16 +454,6 @@
       </svg>
     </button>
     
-    <!-- Block Debug Toggle -->
-    <button
-      on:click={toggleBlockDebug}
-      tabindex="-1"
-      class="bg-purple-400/90 backdrop-blur-md text-white rounded-full px-3 py-2 text-sm font-medium hover:bg-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 transition-colors flex items-center justify-center shadow-lg"
-      title="Toggle block debug info"
-    >
-      📊
-    </button>
-    
     <!-- Sort Blocks Buttons -->
     <button
       on:click={() => sortBlocksByTimestampAction(true)}
@@ -488,14 +479,17 @@
 {#if showBlockDebug}
   <div class="fixed bottom-20 right-4 max-w-sm bg-white/95 backdrop-blur-md shadow-2xl rounded-lg p-4 border border-gray-200 z-40">
     <div class="flex items-center justify-between mb-3">
-      <h3 class="text-sm font-semibold text-gray-900">Block Debug Info</h3>
-      <button on:click={() => showBlockDebug = false} class="text-gray-400 hover:text-gray-600">×</button>
+      <h3 class="text-sm font-semibold text-gray-900">Block Debug</h3>
+      <button
+        on:click={toggleBlockDebug}
+        class="text-gray-400 hover:text-gray-600"
+      >×</button>
     </div>
     
     <div class="space-y-2 text-xs text-gray-600">
-      <div><strong>Total Blocks:</strong> {blockStats.total}</div>
-      <div><strong>With Parents:</strong> {blockStats.withParents}</div>
-      <div><strong>Orphaned:</strong> {blockStats.orphaned}</div>
+      <div>
+        <strong>Total Blocks:</strong> {blockStats.total}
+      </div>
       
       {#if Object.keys(blockStats.byType).length > 0}
         <div><strong>By Type:</strong></div>
@@ -504,8 +498,10 @@
         {/each}
       {/if}
       
+      <div><strong>With Parents:</strong> {blockStats.withParents}</div>
+      <div><strong>Orphaned:</strong> {blockStats.orphaned}</div>
+      
       {#if blockStats.timeRange}
-        <div><strong>Time Range:</strong></div>
         <div class="ml-2">From: {blockStats.timeRange.earliest.toLocaleString()}</div>
         <div class="ml-2">To: {blockStats.timeRange.latest.toLocaleString()}</div>
       {/if}
@@ -518,228 +514,139 @@
     --debug-borders: none; /* Change to "1px solid red" to show debug borders */
     --block-borders: none; /* Change to "1px solid #000" to show block borders */
     --block-hover-bg: none; /* Change to "rgba(0, 0, 0, 0.02)" to show hover background */
+    --block-tooltips: none; /* Change to "block" to show block hover tooltips */
   }
 
   :global(.ProseMirror) {
     outline: none;
-    padding: 30vh 1rem 100vh 1rem; /* Half screen top, full screen bottom */
-    line-height: 1.25;
-    height: 100%;
-    font-family: 'Lora', serif;
-    font-size: 12pt;
+    white-space: pre-wrap;
   }
 
-  /* Block styling with borders */
-  :global(.block-with-info) {
-    border: var(--block-borders);
-    border-radius: 0.375rem; /* rounded-md */
-    padding: 0.5rem;
-    margin: 0.25rem 0;
-    position: relative;
-  }
-
-  /* Remove padding from list items - paragraphs inside provide sufficient spacing */
-  :global(li.block-with-info) {
-    padding: 0 !important;
-    margin-top: -0.1rem !important;
-  }
-
-  :global(.block-with-info:hover) {
-    background-color: var(--block-hover-bg);
-    border-color: #4f46e5; /* Indigo border on hover (only when borders are enabled) */
-  }
-
-  /* Block info tooltip styling */
   :global(.block-info-tooltip) {
-    background: rgba(0, 0, 0, 0.9);
+    background: rgba(0, 0, 0, 0.8);
     color: white;
-    padding: 0.5rem;
-    border-radius: 0.375rem;
-    font-size: 0.75rem;
-    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: monospace;
     pointer-events: none;
-    white-space: nowrap;
+    user-select: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   }
 
   :global(.block-info-content) {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 2px;
   }
 
   :global(.block-info-row) {
     display: flex;
-    justify-content: space-between;
-    gap: 1rem;
+    gap: 8px;
   }
 
   :global(.block-info-label) {
-    color: #9ca3af;
-    font-weight: 500;
+    color: #888;
+    min-width: 50px;
   }
 
   :global(.block-info-value) {
-    color: #f3f4f6;
-    font-weight: 600;
+    color: white;
+    font-weight: 500;
   }
 
-  /* Fix bullet point positioning to stay at top of first line */
-  :global(.ProseMirror ul),
-  :global(.ProseMirror ol) {
-    padding-left: 1rem; /* 16px */
-  }
-  
-  :global(.ProseMirror li) {
-    position: relative;
-    list-style-position: outside;
-    margin-bottom: 0.25rem;
-    padding: 0; /* Remove default padding - paragraph inside has sufficient padding */
-  }
-  
-  :global(.ProseMirror ul li) {
-    list-style-type: none;
-    position: relative;
-  }
-  
-  /* Dash decoration only for bullet lists, not task lists */
-  :global(.ProseMirror ul:not([data-type="taskList"]) li::before) {
-    content: "-";
-    position: absolute;
-    left: -1rem; /* Adjusted for 16px padding */
-    top: 0.3rem;
-    color: currentColor;
-    font-weight: normal;
-  }
-  
-  :global(.ProseMirror ul li::marker),
-  :global(.ProseMirror ol li::marker) {
-    position: absolute;
-    top: 0;
-  }
-  
-  /* Task list specific styling */
-  :global(.ProseMirror ul[data-type="taskList"] li) {
-    list-style: none;
-    position: relative;
-    padding: 0;
-    padding-left: 1rem; /* 16px - Only left padding for checkbox space */
-  }
-  
-  :global(.ProseMirror > ul[data-type="taskList"] li input[type="checkbox"]) {
-    position: absolute;
-    left: 0;
-    top: 0.125rem; /* Align with first line of text */
-    margin: 0;
-    z-index: 1;
-  }
-  
-  
-  /* Apply consistent padding and remove margins from all paragraph-like elements */
-  :global(.ProseMirror p),
-  :global(.ProseMirror h1),
-  :global(.ProseMirror h2), 
-  :global(.ProseMirror h3),
-  :global(.ProseMirror h4),
-  :global(.ProseMirror h5),
-  :global(.ProseMirror h6),
-  :global(.ProseMirror li),
-  :global(.ProseMirror blockquote),
-  :global(.ProseMirror ul),
-  :global(.ProseMirror ol) {
-    padding: 0.25rem; /* p-1 equivalent */
-    margin: 0; /* Remove all margins */
-  }
-  
-  :global(.ProseMirror p.is-editor-empty:first-child::before) {
-    content: attr(data-placeholder);
-    float: left;
-    color: #adb5bd;
-    pointer-events: none;
-    height: 0;
-  }
-  
-  :global(.timeline-marker) {
-    position: relative;
-    display: block;
-    width: 100%;
-    margin: 1rem 0;
-    border-top: 2px solid #3b82f6;
-    min-height: 2px;
-  }
-  
-  :global(.timeline-marker::before) {
-    content: 'Now';
-    position: absolute;
-    top: -1rem;
-    left: 0;
-    background: #3b82f6;
-    color: white;
-    font-size: 0.75rem;
-    padding: 0.25rem 0.5rem;
-    border-radius: 9999px;
-    transform: translateY(50%);
-  }
-  
-  /* Task list styles */
-  :global(.ProseMirror ul[data-type="taskList"]) {
-    list-style: none;
-    padding: 0;
-  }
-  
-  :global(.ProseMirror ul[data-type="taskList"] li) {
-    display: flex;
-    align-items: flex-start; /* Center items vertically */
-  }
-  
-  :global(.ProseMirror ul[data-type="taskList"] li > label) {
-    width: 1rem;
-    height: 1.75rem;
-    margin-left: 0.25rem;
-    margin-right: 0.25rem;
-    user-select: none;
-    display: flex;
-    align-items: center;
-          border: var(--debug-borders);
-  }
-  
-  :global(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]) {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 1rem;
-    height: 1rem;
-    border-radius: 50%; /* Make circular */
-    border: 1px solid #d1d5db;
-    margin: 0;
-    cursor: pointer;
-    background-color: white;
-    position: relative;
+  /* Block metadata styling with visual controls */
+  :global(.block-with-info) {
+    border: var(--block-borders);
+    border-radius: 6px;
     transition: all 0.2s ease;
   }
-  
+
+  :global(.block-with-info:hover) {
+    background: var(--block-hover-bg);
+  }
+
+  /* Timeline mark styling */
+  :global(.timeline-mark) {
+    display: inline-block;
+    background: linear-gradient(90deg, #3b82f6 0%, #1d4ed8 100%);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin: 0 4px;
+    vertical-align: middle;
+    user-select: none;
+    box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3);
+  }
+
+  /* Task list styling improvements */
+  :global(.ProseMirror > ul[data-type="taskList"] li input[type="checkbox"]) {
+    margin-right: 0.5rem;
+  }
+
+  :global(.ProseMirror ul) {
+    padding-left: 1rem;
+  }
+
+  :global(.ProseMirror ol) {
+    padding-left: 1rem;
+  }
+
+  :global(.ProseMirror ul[data-type="taskList"]) {
+    padding-left: 1rem;
+  }
+
+  /* Dash bullet styling for bullet lists only */
+  :global(.ProseMirror ul:not([data-type="taskList"]) li::before) {
+    content: '–';
+    position: absolute;
+    left: -0.75rem;
+    color: #6b7280;
+    font-weight: 500;
+  }
+
+  :global(.ProseMirror ul:not([data-type="taskList"]) li) {
+    position: relative;
+    list-style: none;
+  }
+
+  /* Task list checkboxes positioned at top */
+  :global(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]) {
+    position: absolute;
+    left: 0;
+    top: 0.125rem;
+    margin: 0;
+    transform: none;
+    border: var(--debug-borders);
+  }
+
+  :global(.ProseMirror ul[data-type="taskList"] li > label) {
+    position: relative;
+    display: block;
+    padding-left: 1.5rem;
+    border: var(--debug-borders);
+  }
+
   :global(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]:checked) {
     background-color: #3b82f6;
     border-color: #3b82f6;
   }
-  
+
   :global(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]:checked::after) {
     content: '✓';
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    left: 2px;
+    top: -1px;
     color: white;
-    font-size: 12px;
+    font-size: 10px;
     font-weight: bold;
   }
-  
-  :global(.ProseMirror ul[data-type="taskList"] li > div) {
-          border: var(--debug-borders);
+
+  /* Remove padding from list item blocks to prevent double spacing */
+  :global(.ProseMirror ul li.block-with-info),
+  :global(.ProseMirror ol li.block-with-info) {
+    padding: 0;
   }
-  
-  /* Bullet list styles */
-  :global(.ProseMirror ul:not([data-type="taskList"])) {
-    list-style-type: disc;
-    padding-left: 1.5rem;
-  }
-</style>
+</style> 

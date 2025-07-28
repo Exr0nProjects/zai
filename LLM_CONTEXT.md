@@ -29,6 +29,9 @@ Notes from LLM agents:
 (agent:timestamp) ✅ **Debug Interface**: Block debug panel showing stats, hierarchy, and time ranges for development
 (agent:timestamp) ✅ **Block Decorations**: Hover tooltips in left gutter showing block IDs, timestamps, and parent relationships  
 (agent:timestamp) ✅ **Visual Controls**: CSS variables for toggling debug borders and block borders independently
+(agent:timestamp) ✅ **Mobile Virtual Keyboard**: Dynamic viewport resizing when virtual keyboard appears to prevent page scrolling issues
+(agent:timestamp) ✅ **Markdown Clipboard**: Copy/cut operations output clean markdown with proper indentation and formatting
+(agent:timestamp) ✅ **Markdown Paste**: Intelligent parsing of pasted markdown into proper node structures (headings, lists, tasks)
 
 ## Features
 (agent:contenteditable-basics) **Timeline-based writing**: Insert timeline markers to organize content by time
