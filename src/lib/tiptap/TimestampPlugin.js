@@ -16,7 +16,7 @@ export const TimestampPlugin = Extension.create({
           if (!docChanged) return null;
           
           let tr = null;
-          const targetNodeTypes = ['paragraph', 'listItem', 'taskItem', 'bulletList', 'taskList'];
+          const targetNodeTypes = ['paragraph', 'heading', 'listItem', 'taskItem', 'bulletList', 'taskList'];
           
           // Check for new nodes that need timestamps
           newState.doc.descendants((node, pos) => {

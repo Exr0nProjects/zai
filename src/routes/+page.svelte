@@ -3,7 +3,7 @@
   import { Editor } from '@tiptap/core';
   import Document from '@tiptap/extension-document';
   import Text from '@tiptap/extension-text';
-  import Heading from '@tiptap/extension-heading';
+  import { ExtendedHeading } from '$lib/tiptap/ExtendedHeading.js';
   import Bold from '@tiptap/extension-bold';
   import Italic from '@tiptap/extension-italic';
   import Code from '@tiptap/extension-code';
@@ -30,6 +30,7 @@
   import { BlockInfoDecorator } from '$lib/tiptap/BlockInfoDecorator.js';
   import { TimestampPlugin } from '$lib/tiptap/TimestampPlugin.js';
   import { MarkdownClipboard } from '$lib/tiptap/MarkdownClipboard.js';
+  import { MarkdownPaste } from '$lib/tiptap/MarkdownPaste.js';
   import ListKeymap from '@tiptap/extension-list-keymap';
   import { initializeSnowflakeGenerator } from '$lib/utils/snowflake.js';
   import { getAllBlocks, sortBlocksByTimestamp, getBlockStats } from '$lib/utils/blockSorting.js';
@@ -85,7 +86,7 @@
         HardBreak,
         
         // Typography
-        Heading.configure({
+        ExtendedHeading.configure({
           levels: [1, 2, 3, 4, 5, 6],
         }),
         Bold,
@@ -114,6 +115,7 @@
         BlockInfoDecorator,
         TimestampPlugin, // Automatically adds timestamps without interfering with keymaps
         MarkdownClipboard, // Copy/cut as markdown instead of HTML
+        MarkdownPaste, // Parse pasted markdown into proper nodes
         Placeholder.configure({
           placeholder: 'What do you think?',
         }),
@@ -226,15 +228,6 @@
       content: [
         {
           type: 'paragraph',
-          content: [
-            {
-              type: 'text',
-              text: 'Welcome to your timeline notes! Add content above and below the timeline marker.'
-            }
-          ]
-        },
-        {
-          type: 'paragraph',
           marks: [{ type: 'timeline' }],
           content: []
         }
@@ -303,10 +296,10 @@
       }
     }
     
-    // Ensure exactly 2 empty paragraphs at the end
-    if (trailingEmptyParagraphs < 2) {
-      // Add top-level paragraphs to reach 2
-      const needed = 2 - trailingEmptyParagraphs;
+    // Ensure exactly 3 empty paragraphs at the end
+    if (trailingEmptyParagraphs < 3) {
+      // Add top-level paragraphs to reach 3
+      const needed = 3 - trailingEmptyParagraphs;
       const { tr } = editor.state;
       
       for (let i = 0; i < needed; i++) {
@@ -316,9 +309,9 @@
       }
       
       editor.view.dispatch(tr);
-    } else if (trailingEmptyParagraphs > 2) {
+    } else if (trailingEmptyParagraphs > 3) {
       // Remove excess paragraphs from the end
-      const toRemove = trailingEmptyParagraphs - 2;
+      const toRemove = trailingEmptyParagraphs - 3;
       const { tr } = editor.state;
       
       // Walk backwards and remove excess empty paragraphs
@@ -342,21 +335,27 @@
     setTimeout(() => {
       editor.commands.focus('end');
       
-      const proseMirror = document.querySelector('.ProseMirror');
-      if (proseMirror) {
-        // Get the actual content height (excluding bottom padding)
-        const contentHeight = proseMirror.scrollHeight - window.innerHeight;
-        const viewportHeight = window.innerHeight;
-        
-        // Center the last line of content in the viewport
-        const targetScroll = contentHeight - (viewportHeight / 2);
-        
-        window.scrollTo({ 
-          top: Math.max(0, targetScroll), 
-          behavior: 'smooth' 
-        });
-      }
-    }, 100);
+      // Add a small delay to ensure focus is complete before scrolling
+      setTimeout(() => {
+        const proseMirror = document.querySelector('.ProseMirror');
+        if (proseMirror) {
+          // Force layout recalculation to ensure accurate measurements
+          proseMirror.offsetHeight;
+          
+          // Get the actual content height (excluding bottom padding)
+          const contentHeight = proseMirror.scrollHeight - window.innerHeight;
+          const viewportHeight = window.innerHeight;
+          
+          // Center the last line of content in the viewport
+          const targetScroll = contentHeight - (viewportHeight / 2);
+          
+          window.scrollTo({ 
+            top: Math.max(0, targetScroll), 
+            behavior: 'smooth' 
+          });
+        }
+      }, 50);
+    }, 150);
   }
   
   function addTodoList() {
@@ -539,6 +538,12 @@
     position: relative;
   }
 
+  /* Remove padding from list items - paragraphs inside provide sufficient spacing */
+  :global(li.block-with-info) {
+    padding: 0 !important;
+    margin-top: -0.1rem !important;
+  }
+
   :global(.block-with-info:hover) {
     background-color: var(--block-hover-bg);
     border-color: #4f46e5; /* Indigo border on hover (only when borders are enabled) */
@@ -582,13 +587,14 @@
   /* Fix bullet point positioning to stay at top of first line */
   :global(.ProseMirror ul),
   :global(.ProseMirror ol) {
-    padding-left: 1.5rem;
+    padding-left: 1rem; /* 16px */
   }
   
   :global(.ProseMirror li) {
     position: relative;
     list-style-position: outside;
     margin-bottom: 0.25rem;
+    padding: 0; /* Remove default padding - paragraph inside has sufficient padding */
   }
   
   :global(.ProseMirror ul li) {
@@ -596,11 +602,12 @@
     position: relative;
   }
   
-  :global(.ProseMirror ul li::before) {
+  /* Dash decoration only for bullet lists, not task lists */
+  :global(.ProseMirror ul:not([data-type="taskList"]) li::before) {
     content: "-";
     position: absolute;
-    left: -1.25rem;
-    top: 0.6rem;
+    left: -1rem; /* Adjusted for 16px padding */
+    top: 0.3rem;
     color: currentColor;
     font-weight: normal;
   }
@@ -615,7 +622,8 @@
   :global(.ProseMirror ul[data-type="taskList"] li) {
     list-style: none;
     position: relative;
-    padding-left: 1.5rem;
+    padding: 0;
+    padding-left: 1rem; /* 16px - Only left padding for checkbox space */
   }
   
   :global(.ProseMirror > ul[data-type="taskList"] li input[type="checkbox"]) {
@@ -685,9 +693,10 @@
   }
   
   :global(.ProseMirror ul[data-type="taskList"] li > label) {
-    width: 1.5rem;
+    width: 1rem;
     height: 1.75rem;
-    margin-right: 0.5rem;
+    margin-left: 0.25rem;
+    margin-right: 0.25rem;
     user-select: none;
     display: flex;
     align-items: center;
@@ -697,8 +706,8 @@
   :global(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]) {
     appearance: none;
     -webkit-appearance: none;
-    width: 20px;
-    height: 20px;
+    width: 1rem;
+    height: 1rem;
     border-radius: 50%; /* Make circular */
     border: 1px solid #d1d5db;
     margin: 0;
