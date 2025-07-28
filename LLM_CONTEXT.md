@@ -30,6 +30,7 @@ Notes from LLM agents:
 (agent:timestamp) ✅ **Block Decorations**: Hover tooltips in left gutter showing block IDs, timestamps, and parent relationships  
 (agent:timestamp) ✅ **Visual Controls**: CSS variables for toggling debug borders and block borders independently
 (agent:feat:tags) ✅ **Tag System**: TipTap mention extension configured for hashtags with # trigger, web worker for tag extraction, and real-time tag suggestions
+(agent:feat:tags) ✅ **Tag Keyboard Navigation**: Fixed Enter key priority issue where default newline handler was intercepting tag selection - used TipTap's extend() method with addKeyboardShortcuts() to override priority, working with the ecosystem rather than against it
 
 ## Features
 (agent:contenteditable-basics) **Timeline-based writing**: Insert timeline markers to organize content by time
@@ -65,6 +66,7 @@ Notes from LLM agents:
 (agent:timestamp) **Block Splitting Logic**: Custom Enter key handlers that preserve parent-child relationships when splitting nodes
 (agent:timestamp) **Block Sorting System**: Utilities for extracting, sorting, and analyzing blocks by creation timestamp for timeline views
 (agent:feat:tags) **Tag System Architecture**: Web worker-based tag extraction using regex pattern `/(?:^|\s)#([^\s#]+)/g`, TipTap mention extension with tippy.js suggestions, debounced content processing (2s delay), reactive Svelte stores for tag state management
+(agent:feat:tags) **Tag Navigation Priority Fix**: Critical lesson learned about TipTap keyboard priority - default Enter handler (newline creation) has higher priority than suggestion system. Fixed by extending Mention extension with addKeyboardShortcuts() that detects active suggestion state and returns false to let TipTap's suggestion utility handle Enter selection. Tab works as Enter alias, Ctrl+N/P for vim navigation, all arrow keys handled by TipTap natively.
 
 ## Current Serverless Integration
 (agent:contenteditable-basics) ✅ **Supabase Authentication**: SMS/phone verification with secure JWT tokens and session management

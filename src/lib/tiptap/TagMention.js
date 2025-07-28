@@ -94,7 +94,7 @@ function createSuggestionList() {
         suggestionEl.appendChild(tagCount);
         
         suggestionEl.addEventListener('click', () => {
-          props.command({ id: item.id, label: item.label });
+          props.command({ id: item.id, label: item.label, isNew: item.isNew });
         });
         
         component.appendChild(suggestionEl);
@@ -121,59 +121,30 @@ function createSuggestionList() {
         selectedIndex
       });
       
-      // Safety check for stored items
-      if (!currentItems || currentItems.length === 0) {
-        console.log('❌ No valid items in storage');
-        return false;
-      }
-      
-      // Handle Tab - manually execute the command with current selection
+      // Only handle Tab as alias for Enter, let TipTap handle everything else
       if (props.event.key === 'Tab') {
+        console.log('🔄 Tab → treating as Enter for TipTap selection');
         props.event.preventDefault();
-        console.log('🔄 Tab key - executing command for index:', selectedIndex);
+        // Let TipTap's default Enter handling work (no synthetic events needed)
+        return false; 
+      }
+      
+      // Handle Ctrl+N/P for vim users (navigate only, let TipTap handle selection)
+      if (props.event.ctrlKey && (props.event.key === 'n' || props.event.key === 'p')) {
+        console.log('🎯 Ctrl+N/P navigation');
+        props.event.preventDefault();
         
-        if (selectedIndex >= 0 && selectedIndex < currentItems.length) {
-          const selectedItem = currentItems[selectedIndex];
-          console.log('✅ Tab selecting item:', selectedItem);
-          
-          // Add tag to registry if it's new
-          if (selectedItem && selectedItem.isNew) {
-            setTimeout(async () => {
-              try {
-                await tagManager.addNewTag(selectedItem.label);
-              } catch (error) {
-                console.warn('Could not add tag to registry:', error);
-              }
-            }, 0);
-          }
-          
-          // Execute the command - this should be available here
-          if (selectedItem && typeof props.command === 'function') {
-            props.command({ id: selectedItem.id, label: selectedItem.label });
-          } else {
-            console.error('No command function available or no selected item');
-          }
+        if (props.event.key === 'n') {
+          selectedIndex = Math.min(currentItems.length - 1, selectedIndex + 1);
+        } else {
+          selectedIndex = Math.max(0, selectedIndex - 1);
         }
-        return true;
-      }
-      
-      // Handle Ctrl+N/P for vim users (manual navigation)
-      if (props.event.ctrlKey && props.event.key === 'n') {
-        props.event.preventDefault();
-        selectedIndex = Math.min(currentItems.length - 1, selectedIndex + 1);
         updateSelection();
         return true;
       }
       
-      if (props.event.ctrlKey && props.event.key === 'p') {
-        props.event.preventDefault();
-        selectedIndex = Math.max(0, selectedIndex - 1);
-        updateSelection();
-        return true;
-      }
-      
-      // Let TipTap handle everything else natively (Enter, Arrow keys)
-      console.log('⏩ Letting TipTap handle:', props.event.key);
+      // Let TipTap handle EVERYTHING else (Enter, Arrow keys, Escape, etc.)
+      console.log('⏩ TipTap handles:', props.event.key);
       return false;
     },
 
@@ -205,8 +176,38 @@ function createSuggestionList() {
   }
 }
 
-// Configure the mention extension for tags
-export const TagMention = Mention.configure({
+// Configure the mention extension for tags  
+export const TagMention = Mention.extend({
+  // Override keyboard shortcuts to handle Enter priority FIRST
+  addKeyboardShortcuts() {
+    return {
+      // Override Enter key when suggestions are active - HIGHER PRIORITY than default
+      'Enter': () => {
+        console.log('🔑 TagMention Enter override - checking suggestion state');
+        
+        // Check if our suggestion system is active
+        const suggestionPlugin = this.editor.view.state.plugins.find(
+          plugin => plugin.key && plugin.key.key && plugin.key.key.includes('suggestion')
+        );
+        
+        if (suggestionPlugin) {
+          const suggestionState = suggestionPlugin.getState(this.editor.view.state);
+          console.log('💡 Suggestion state:', suggestionState);
+          
+          if (suggestionState && suggestionState.active) {
+            console.log('✅ Suggestions active - letting TipTap handle Enter');
+            // Let TipTap's suggestion system handle this
+            return false;
+          }
+        }
+        
+        console.log('⏭️ No active suggestions - letting default Enter happen');
+        // Not in suggestion mode, let default Enter behavior happen
+        return false;
+      },
+    };
+  },
+}).configure({
   HTMLAttributes: {
     class: 'tag-mention bg-blue-100 text-blue-800 px-1 rounded',
   },
@@ -252,6 +253,41 @@ export const TagMention = Mention.configure({
         console.error('Error fetching tag suggestions:', error);
         return [];
       }
+    },
+    
+    // Command executed when a suggestion is selected
+    command: ({ editor, range, props }) => {
+      console.log('🎯 Suggestion command executing:', { props });
+      
+      // Add tag to registry if it's new
+      if (props.isNew) {
+        setTimeout(async () => {
+          try {
+            await tagManager.addNewTag(props.label);
+          } catch (error) {
+            console.warn('Could not add tag to registry:', error);
+          }
+        }, 0);
+      }
+      
+      // Replace the range with the mention node
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(range, [
+          {
+            type: 'mention',
+            attrs: {
+              id: props.id,
+              label: props.label,
+            },
+          },
+          {
+            type: 'text',
+            text: ' ',
+          },
+        ])
+        .run();
     },
     
     // Render suggestions

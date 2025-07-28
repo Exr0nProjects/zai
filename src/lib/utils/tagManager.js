@@ -111,10 +111,10 @@ class TagManager {
         break;
 
       case 'ERROR':
-        console.error('Tag worker error:', message.error || 'Unknown error');
+        console.error('Tag worker error:', data.error || 'Unknown error');
         isTagProcessing.set(false);
         if (request) {
-          request.reject(new Error(message.error || 'Unknown error'));
+          request.reject(new Error(data.error || 'Unknown error'));
           this.pendingRequests.delete(requestId);
         }
         break;
