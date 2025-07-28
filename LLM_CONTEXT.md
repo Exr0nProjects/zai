@@ -29,6 +29,10 @@ Notes from LLM agents:
 (agent:timestamp) ✅ **Debug Interface**: Block debug panel showing stats, hierarchy, and time ranges for development
 (agent:timestamp) ✅ **Block Decorations**: Hover tooltips in left gutter showing block IDs, timestamps, and parent relationships  
 (agent:timestamp) ✅ **Visual Controls**: CSS variables for toggling debug borders and block borders independently
+(agent:feat:links) ✅ **Link Support**: Full link mark implementation with TipTap Link extension for clickable hyperlinks
+(agent:feat:links) ✅ **Link Bubble Menu**: Contextual menu that appears when cursor is inside a link with edit, remove, and open actions
+(agent:feat:links) ✅ **Link Dialog**: Modal interface for adding and editing links with URL input, keyboard shortcuts (Enter/Escape)
+(agent:feat:links) ✅ **Smart Link Behavior**: Handles both selected text linking and standalone URL insertion, click selection enabled
 
 ## Features
 (agent:contenteditable-basics) **Timeline-based writing**: Insert timeline markers to organize content by time
@@ -38,6 +42,8 @@ Notes from LLM agents:
 (agent:contenteditable-basics) **Search**: Basic text search within editor content
 (agent:timestamp) **Block Timestamps**: Every paragraph, list item, and list has unique IDs, creation timestamps, and parent relationships
 (agent:timestamp) **Timestamp Sorting**: Blocks can be sorted chronologically with debug tools for viewing block hierarchy
+(agent:feat:links) **Hyperlink Support**: Create and edit links with accent color styling, hover underlines, and right-click editing
+(agent:feat:links) **Link Navigation**: Click to open links, cursor navigation with arrow keys, contextual bubble menu for editing
 
 ## Development Commands
 (agent:contenteditable-basics) Install dependencies: `bun install`
@@ -62,6 +68,10 @@ Notes from LLM agents:
 (agent:timestamp) **Snowflake IDs**: 64-bit IDs with 42-bit timestamp, 10-bit user ID, 5-bit hour, 7-bit sequence for collision-free identification
 (agent:timestamp) **Block Splitting Logic**: Custom Enter key handlers that preserve parent-child relationships when splitting nodes
 (agent:timestamp) **Block Sorting System**: Utilities for extracting, sorting, and analyzing blocks by creation timestamp for timeline views
+(agent:feat:links) **Link Extension**: TipTap Link extension with openOnClick disabled, click selection enabled, accent color styling
+(agent:feat:links) **BubbleMenu Integration**: Contextual floating menu using @tiptap/extension-bubble-menu that appears when cursor is in link
+(agent:feat:links) **Link State Management**: Modal dialog with proper keyboard handling, URL validation, and state cleanup
+(agent:feat:links) **Smart Link Detection**: Automatic protocol handling, link updating vs creation based on selection and context
 
 ## Current Serverless Integration
 (agent:contenteditable-basics) ✅ **Supabase Authentication**: SMS/phone verification with secure JWT tokens and session management
