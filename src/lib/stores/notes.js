@@ -105,31 +105,13 @@ export const notesActions = {
     }
   },
 
-  // Combine all notes into a single document for Tiptap
-  buildTimelineDocument(notesArray, currentTime = new Date()) {
+  // Get notes sorted by timestamp with a way to identify the "now" position
+  getSortedNotesWithNowPosition(notesArray, currentTime = new Date()) {
     if (!notesArray?.length) {
       return {
-        type: 'doc',
-        content: [
-          {
-            type: 'paragraph',
-            content: [
-              {
-                type: 'text',
-                text: 'Start writing your thoughts...'
-              }
-            ]
-          },
-          {
-            type: 'paragraph',
-            marks: [{ type: 'timeline' }],
-            content: []
-          },
-          {
-            type: 'paragraph',
-            content: []
-          }
-        ]
+        pastNotes: [],
+        futureNotes: [],
+        nowIndex: 0
       };
     }
 
@@ -137,54 +119,23 @@ export const notesActions = {
       new Date(a.created_at) - new Date(b.created_at)
     );
 
-    const content = [];
-    let timelineInserted = false;
+    const nowIndex = sortedNotes.findIndex(note => 
+      new Date(note.created_at) > currentTime
+    );
 
-    for (const note of sortedNotes) {
-      const noteTime = new Date(note.created_at);
-      
-      // Insert timeline mark if we've passed the current time
-      if (!timelineInserted && noteTime > currentTime) {
-        content.push({
-          type: 'paragraph',
-          marks: [{ type: 'timeline' }],
-          content: []
-        });
-        timelineInserted = true;
-      }
-
-      // Add the note content
-      if (note.contents.trim()) {
-        content.push({
-          type: 'paragraph',
-          content: [
-            {
-              type: 'text',
-              text: note.contents
-            }
-          ]
-        });
-      }
+    if (nowIndex === -1) {
+      // All notes are in the past
+      return {
+        pastNotes: sortedNotes,
+        futureNotes: [],
+        nowIndex: sortedNotes.length
+      };
     }
-
-    // If timeline wasn't inserted (all notes are in the past), add it at the end
-    if (!timelineInserted) {
-      content.push({
-        type: 'paragraph',
-        marks: [{ type: 'timeline' }],
-        content: []
-      });
-    }
-
-    // Always end with an empty paragraph for continued writing
-    content.push({
-      type: 'paragraph',
-      content: []
-    });
 
     return {
-      type: 'doc',
-      content
+      pastNotes: sortedNotes.slice(0, nowIndex),
+      futureNotes: sortedNotes.slice(nowIndex),
+      nowIndex
     };
   }
 }; 

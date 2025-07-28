@@ -22,10 +22,6 @@
 	},
 	"dependencies": {
 		"@supabase/supabase-js": "^2.52.1",
-		"@tiptap/core": "^3.0.7",
-		"@tiptap/extension-placeholder": "^3.0.7",
-		"@tiptap/pm": "^3.0.7",
-		"@tiptap/starter-kit": "^3.0.7",
 		"@vite-pwa/sveltekit": "^1.0.0",
 		"workbox-window": "^7.3.0"
 	}

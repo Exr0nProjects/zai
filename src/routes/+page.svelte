@@ -1,18 +1,19 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { Editor } from '@tiptap/core';
-  import StarterKit from '@tiptap/starter-kit';
-  import Placeholder from '@tiptap/extension-placeholder';
   import { user, authActions } from '$lib/stores/auth.js';
   import { checkOnlineStatus } from '$lib/utils/auth.js';
   import { notes, notesActions, isLoading } from '$lib/stores/notes.js';
-  import { TimelineMark } from '$lib/tiptap/TimelineMark.js';
   
   let isOnline = true;
   let topBarHovered = false;
   let searchQuery = '';
-  let editor;
-  let element;
+  let timelineContainer;
+  let nowMarker;
+  
+  // Timeline data
+  let pastNotes = [];
+  let futureNotes = [];
+  let nowIndex = 0;
   
   onMount(async () => {
     // Check online status
@@ -26,69 +27,15 @@
 
     // Load notes from Supabase
     await notesActions.loadNotes();
-    
-    // Initialize Tiptap editor
-    editor = new Editor({
-      element: element,
-      extensions: [
-        StarterKit,
-        TimelineMark,
-        Placeholder.configure({
-          placeholder: 'Start writing your thoughts...',
-        }),
-      ],
-      content: notesActions.buildTimelineDocument($notes),
-      onUpdate: ({ editor }) => {
-        // Auto-save functionality could go here
-      },
-      editorProps: {
-        handleKeyDown: (view, event) => {
-          // Handle Enter key to save current line
-          if (event.key === 'Enter' && !event.shiftKey) {
-            const { selection } = view.state;
-            const currentPos = selection.from;
-            
-            // Get current line content
-            const doc = view.state.doc;
-            const currentNode = doc.nodeAt(currentPos);
-            const resolvedPos = doc.resolve(currentPos);
-            const currentParagraph = resolvedPos.parent;
-            
-            if (currentParagraph && currentParagraph.textContent.trim()) {
-              // Save the current line
-              notesActions.saveNote(currentParagraph.textContent, new Date());
-            }
-            
-            return false; // Allow normal Enter behavior
-          }
-          return false;
-        }
-      }
-    });
-
-    // Watch for notes changes and update editor
-    const unsubscribe = notes.subscribe((currentNotes) => {
-      if (editor && !$isLoading) {
-        const newContent = notesActions.buildTimelineDocument(currentNotes);
-        const currentContent = editor.getJSON();
-        
-        // Only update if content actually changed to avoid cursor jumps
-        if (JSON.stringify(newContent) !== JSON.stringify(currentContent)) {
-          editor.commands.setContent(newContent);
-        }
-      }
-    });
-
-    return () => {
-      unsubscribe();
-    };
   });
 
-  onDestroy(() => {
-    if (editor) {
-      editor.destroy();
-    }
-  });
+  // Watch for notes changes and update timeline data
+  $: if ($notes) {
+    const timelineData = notesActions.getSortedNotesWithNowPosition($notes);
+    pastNotes = timelineData.pastNotes;
+    futureNotes = timelineData.futureNotes;
+    nowIndex = timelineData.nowIndex;
+  }
   
   function handleSearch() {
     if (searchQuery.trim()) {
@@ -97,31 +44,69 @@
     }
   }
   
-  function focusAtTimeline() {
-    if (editor) {
-      // Find the timeline mark and position cursor there
-      const { doc } = editor.state;
-      let timelinePos = null;
-      
-      doc.descendants((node, pos) => {
-        if (node.marks.some(mark => mark.type.name === 'timeline')) {
-          timelinePos = pos;
-          return false; // Stop searching
-        }
-      });
-      
-      if (timelinePos !== null) {
-        editor.commands.focus();
-        editor.commands.setTextSelection(timelinePos);
-      } else {
-        // If no timeline found, focus at end
-        editor.commands.focus('end');
+  function jumpToNow() {
+    if (nowMarker) {
+      nowMarker.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
+  function handleBlockEdit(event, note = null) {
+    const element = event.target;
+    element.contentEditable = true;
+    element.focus();
+    
+    // Add visual editing state
+    element.classList.add('editing');
+  }
+
+  function handleBlockSave(event, note = null) {
+    const element = event.target;
+    const content = element.textContent.trim();
+    
+    element.contentEditable = false;
+    element.classList.remove('editing');
+    
+    if (content && content !== note?.contents) {
+      // Save the note
+      notesActions.saveNote(content, new Date());
+    }
+  }
+
+  function handleKeyDown(event, note = null) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      handleBlockSave(event, note);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.target.contentEditable = false;
+      event.target.classList.remove('editing');
+      // Restore original content if it was an existing note
+      if (note) {
+        event.target.textContent = note.contents;
       }
     }
+  }
+
+  function createNewBlock() {
+    // Create a new block at the current time
+    notesActions.saveNote('', new Date());
   }
   
   function logout() {
     authActions.logout();
+  }
+
+  function formatTimestamp(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    
+    if (isToday) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else {
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + 
+             ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
   }
 </script>
 
@@ -155,7 +140,7 @@
   </div>
 </div>
 
-<!-- Main Editor Area -->
+<!-- Main Timeline Area -->
 <div class="pt-16 pb-20 min-h-screen bg-white">
   <div class="max-w-4xl mx-auto px-4 py-8">
     {#if $isLoading}
@@ -164,11 +149,83 @@
         <span class="ml-3 text-gray-600">Loading your notes...</span>
       </div>
     {:else}
-      <!-- Tiptap Editor -->
-      <div 
-        bind:this={element}
-        class="prose prose-lg max-w-none focus-within:outline-none min-h-[60vh] px-4 py-8"
-      />
+      <!-- Timeline Container -->
+      <div bind:this={timelineContainer} class="timeline-container">
+        
+        <!-- Past Notes -->
+        {#each pastNotes as note (note.id)}
+          <div class="timeline-block">
+            <div class="timestamp-gutter">
+              <span class="timestamp">{formatTimestamp(note.created_at)}</span>
+            </div>
+            <div class="content-area">
+              <div 
+                class="editable-block past-note"
+                on:click={(e) => handleBlockEdit(e, note)}
+                on:blur={(e) => handleBlockSave(e, note)}
+                on:keydown={(e) => handleKeyDown(e, note)}
+                role="textbox"
+                tabindex="0"
+              >
+                {note.contents}
+              </div>
+            </div>
+          </div>
+        {/each}
+
+        <!-- Now Marker -->
+        <div bind:this={nowMarker} class="timeline-block now-marker">
+          <div class="timestamp-gutter">
+            <span class="timestamp now-time">{formatTimestamp(new Date().toISOString())}</span>
+          </div>
+          <div class="content-area">
+            <div class="now-line">
+              <span class="now-badge">Now</span>
+              <div class="now-border"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- New editable block at "now" -->
+        <div class="timeline-block">
+          <div class="timestamp-gutter">
+            <span class="timestamp-placeholder">•</span>
+          </div>
+          <div class="content-area">
+            <div 
+              class="editable-block new-block"
+              on:click={handleBlockEdit}
+              on:blur={handleBlockSave}
+              on:keydown={handleKeyDown}
+              role="textbox"
+              tabindex="0"
+              data-placeholder="Start writing your thoughts..."
+            ></div>
+          </div>
+        </div>
+
+        <!-- Future Notes -->
+        {#each futureNotes as note (note.id)}
+          <div class="timeline-block">
+            <div class="timestamp-gutter">
+              <span class="timestamp future">{formatTimestamp(note.created_at)}</span>
+            </div>
+            <div class="content-area">
+              <div 
+                class="editable-block future-note"
+                on:click={(e) => handleBlockEdit(e, note)}
+                on:blur={(e) => handleBlockSave(e, note)}
+                on:keydown={(e) => handleKeyDown(e, note)}
+                role="textbox"
+                tabindex="0"
+              >
+                {note.contents}
+              </div>
+            </div>
+          </div>
+        {/each}
+
+      </div>
     {/if}
   </div>
 </div>
@@ -195,9 +252,9 @@
       </button>
     </div>
     
-    <!-- Focus Timeline Button -->
+    <!-- Jump to Now Button -->
     <button
-      on:click={focusAtTimeline}
+      on:click={jumpToNow}
       class="w-1/3 bg-blue-600 text-white rounded-full px-4 py-2 text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors flex items-center justify-center space-x-2"
     >
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -209,38 +266,111 @@
 </div>
 
 <style>
-  :global(.ProseMirror) {
+  .timeline-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-width: 100%;
+  }
+
+  .timeline-block {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    min-height: 2.5rem;
+  }
+
+  .timestamp-gutter {
+    width: 120px;
+    flex-shrink: 0;
+    text-align: right;
+    padding-top: 0.5rem;
+  }
+
+  .timestamp {
+    font-size: 0.75rem;
+    color: #6b7280;
+    font-mono: true;
+  }
+
+  .timestamp.now-time {
+    color: #3b82f6;
+    font-weight: 600;
+  }
+
+  .timestamp.future {
+    color: #9ca3af;
+  }
+
+  .timestamp-placeholder {
+    font-size: 0.75rem;
+    color: #d1d5db;
+  }
+
+  .content-area {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .editable-block {
+    min-height: 1.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    cursor: text;
+    transition: all 0.2s ease;
+    word-wrap: break-word;
     outline: none;
-    padding: 1rem;
-    line-height: 1.8;
   }
-  
-  :global(.ProseMirror p.is-editor-empty:first-child::before) {
+
+  .editable-block:hover {
+    background-color: #f9fafb;
+  }
+
+  .editable-block.editing {
+    background-color: #ffffff;
+    border: 2px solid #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .editable-block.new-block:empty::before {
     content: attr(data-placeholder);
-    float: left;
-    color: #adb5bd;
+    color: #9ca3af;
     pointer-events: none;
-    height: 0;
   }
-  
-  :global(.timeline-marker) {
-    position: relative;
-    display: block;
-    width: 100%;
+
+  .editable-block.past-note {
+    border-left: 3px solid #e5e7eb;
+  }
+
+  .editable-block.future-note {
+    border-left: 3px solid #d1d5db;
+    color: #6b7280;
+  }
+
+  .now-marker {
     margin: 1rem 0;
-    border-top: 2px solid #3b82f6;
   }
-  
-  :global(.timeline-marker::before) {
-    content: 'Now';
-    position: absolute;
-    top: -1rem;
-    left: 0;
+
+  .now-line {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .now-badge {
     background: #3b82f6;
     color: white;
     font-size: 0.75rem;
-    padding: 0.25rem 0.5rem;
+    font-weight: 600;
+    padding: 0.25rem 0.75rem;
     border-radius: 9999px;
-    transform: translateY(50%);
+    flex-shrink: 0;
+  }
+
+  .now-border {
+    flex: 1;
+    height: 2px;
+    background: #3b82f6;
+    border-radius: 1px;
   }
 </style>
