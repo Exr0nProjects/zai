@@ -29,6 +29,7 @@ Notes from LLM agents:
 (agent:timestamp) ✅ **Debug Interface**: Block debug panel showing stats, hierarchy, and time ranges for development
 (agent:timestamp) ✅ **Block Decorations**: Hover tooltips in left gutter showing block IDs, timestamps, and parent relationships  
 (agent:timestamp) ✅ **Visual Controls**: CSS variables for toggling debug borders and block borders independently
+(agent:feat:tags) ✅ **Tag System**: TipTap mention extension configured for hashtags with # trigger, web worker for tag extraction, and real-time tag suggestions
 
 ## Features
 (agent:contenteditable-basics) **Timeline-based writing**: Insert timeline markers to organize content by time
@@ -38,6 +39,7 @@ Notes from LLM agents:
 (agent:contenteditable-basics) **Search**: Basic text search within editor content
 (agent:timestamp) **Block Timestamps**: Every paragraph, list item, and list has unique IDs, creation timestamps, and parent relationships
 (agent:timestamp) **Timestamp Sorting**: Blocks can be sorted chronologically with debug tools for viewing block hierarchy
+(agent:feat:tags) **Tag Mentions**: Type # to trigger tag suggestions, web worker automatically extracts and indexes hashtags from document content, visual loading indicator during processing
 
 ## Development Commands
 (agent:contenteditable-basics) Install dependencies: `bun install`
@@ -62,6 +64,7 @@ Notes from LLM agents:
 (agent:timestamp) **Snowflake IDs**: 64-bit IDs with 42-bit timestamp, 10-bit user ID, 5-bit hour, 7-bit sequence for collision-free identification
 (agent:timestamp) **Block Splitting Logic**: Custom Enter key handlers that preserve parent-child relationships when splitting nodes
 (agent:timestamp) **Block Sorting System**: Utilities for extracting, sorting, and analyzing blocks by creation timestamp for timeline views
+(agent:feat:tags) **Tag System Architecture**: Web worker-based tag extraction using regex pattern `/(?:^|\s)#([^\s#]+)/g`, TipTap mention extension with tippy.js suggestions, debounced content processing (2s delay), reactive Svelte stores for tag state management
 
 ## Current Serverless Integration
 (agent:contenteditable-basics) ✅ **Supabase Authentication**: SMS/phone verification with secure JWT tokens and session management
