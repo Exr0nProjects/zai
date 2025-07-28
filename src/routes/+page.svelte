@@ -66,10 +66,50 @@
   let showLinkMenu = false;
   let linkUrl = '';
   let originalLinkUrl = ''; // Track original URL for cancel behavior
-  let currentLinkUrl = ''; // Track URL of currently hovered/active link
   let isEditingLink = false;
   let isHoveringLink = false; // Track if hovering over a link
   let linkContextMenu = false; // Track right-click/long-press
+  let linkRefreshTrigger = 0; // Force reactivity when polling link state
+  
+  // Reactive current link URL that updates when trigger changes
+  $: currentLinkUrl = linkRefreshTrigger >= 0 ? getCurrentLinkUrl() : '';
+  
+  // Get current link URL from DOM
+  function getCurrentLinkUrl() {
+    if (!editor) return '';
+    
+    console.log('getCurrentLinkUrl');
+    try {
+      // Get the current selection position
+      const { from } = editor.state.selection;
+      
+      // Find the DOM node at this position
+      const domAtPos = editor.view.domAtPos(from);
+      
+      // Walk up the DOM tree to find the link element
+      let node = domAtPos.node;
+      if (node.nodeType === Node.TEXT_NODE) {
+        node = node.parentElement;
+      }
+      
+      // Find the closest link element
+      const linkElement = node?.closest('a[href]');
+      
+      if (linkElement) {
+        return linkElement.getAttribute('href') || '';
+      }
+    } catch (error) {
+      console.warn('Error getting current link URL:', error);
+    }
+    
+    // Fallback to TipTap's method
+    if (editor.isActive('link')) {
+      const attrs = editor.getAttributes('link');
+      return attrs.href || '';
+    }
+    
+    return '';
+  }
   
   // Y.js document for collaboration
   const ydoc = new Y.Doc();
@@ -165,7 +205,6 @@
       showLinkMenu = false;
       linkUrl = '';
       originalLinkUrl = '';
-      currentLinkUrl = '';
       isEditingLink = false;
       isHoveringLink = false;
       linkContextMenu = false;
@@ -241,12 +280,15 @@
   
   // Calculate dynamic pill width based on content
   $: pillWidth = (() => {
+    // Include linkRefreshTrigger to force recalculation when link changes
+    linkRefreshTrigger;
+    
     if (showLinkMenu) {
       // When editing, base width on input placeholder or current value + extra padding
       const text = linkUrl || 'https://example.com';
       return Math.max(140, Math.min(450, text.length * 8 + 100)); // More padding: 140 min, 450 max, +100 padding
     } else {
-      // When displaying, base width on actual currentLinkUrl + padding
+      // When displaying, base width on current link URL + padding
       const text = currentLinkUrl || 'New link';
       return Math.max(120, Math.min(400, text.length * 8 + 80)); // Standard padding for display
     }
@@ -316,8 +358,16 @@
         BubbleMenu.configure({
           element: linkMenuElement,
           shouldShow: ({ editor }) => {
-            // Show when editing, hovering over a link, or context menu is active
-            return editor.isActive('link') && (showLinkMenu || isHoveringLink || linkContextMenu);
+            // Show whenever cursor is inside a link (covers hover, editing, and cursor positioning)
+            const isInLink = editor.isActive('link');
+            
+            if (isInLink) {
+              // Explicitly update current link URL when we detect we're in a link
+              console.log('shouldShow: updating link URL');
+              currentLinkUrl = getCurrentLinkUrl();
+            }
+            
+            return isInLink;
           },
           pluginKey: 'linkBubbleMenu',
           tippyOptions: {
@@ -326,11 +376,15 @@
             arrow: false,
             interactive: true,
             onShow: () => {
-              // Set hover state when bubble shows
+              // Re-poll active link state when bubble menu shows
               isHoveringLink = true;
+              // Explicitly get and update current link URL
+              console.log('\n\n\nshowpilll\n\n\n')
+              currentLinkUrl = getCurrentLinkUrl();
+              // Force reactivity update for pill width and content
+              linkRefreshTrigger++;
             },
             onHide: () => {
-              // Clear hover state when bubble hides (unless we're editing)
               if (!showLinkMenu) {
                 isHoveringLink = false;
                 linkContextMenu = false;
@@ -384,25 +438,8 @@
         // Handle hover events on links
         editorDom.addEventListener('mouseover', (e) => {
           const target = e.target.closest('a[href]');
-          if (target) {
-            // Store current selection to restore later
-            const currentSelection = editor.state.selection;
-            
-            // Temporarily position cursor in the link to get proper TipTap state
-            const pos = editor.view.posAtDOM(target, 0);
-            if (pos !== null) {
-              editor.commands.setTextSelection(pos);
-              
-              // Check if we're now in a link and get its attributes
-              if (editor.isActive('link')) {
-                isHoveringLink = true;
-                const linkAttrs = editor.getAttributes('link');
-                currentLinkUrl = linkAttrs.href || target.href || '';
-              }
-              
-              // Restore original selection
-              editor.view.dispatch(editor.state.tr.setSelection(currentSelection));
-            }
+          if (target && editor.isActive('link')) {
+            isHoveringLink = true;
           }
         });
         
@@ -410,7 +447,6 @@
           const target = e.target.closest('a[href]');
           if (target && !showLinkMenu) {
             isHoveringLink = false;
-            currentLinkUrl = ''; // Clear currentLinkUrl on mouse out
           }
         });
         
@@ -421,9 +457,6 @@
             e.preventDefault();
             linkContextMenu = true;
             isHoveringLink = true;
-            // Get the href from TipTap's link attributes for accuracy
-            const linkAttrs = editor.getAttributes('link');
-            currentLinkUrl = linkAttrs.href || target.href || '';
           }
         });
         
@@ -436,9 +469,6 @@
               e.preventDefault();
               linkContextMenu = true;
               isHoveringLink = true;
-              // Get the href from TipTap's link attributes for accuracy
-              const linkAttrs = editor.getAttributes('link');
-              currentLinkUrl = linkAttrs.href || target.href || '';
             }, 500); // 500ms long press
           }
         });
@@ -787,7 +817,6 @@
     showLinkMenu = false;
     linkUrl = '';
     originalLinkUrl = '';
-    currentLinkUrl = '';
     isEditingLink = false;
     isHoveringLink = false;
     linkContextMenu = false;
@@ -795,24 +824,34 @@
   
   function cancelLinkEdit() {
     if (editor) {
-      // If we were creating a new link (empty href), remove it
-      const { href } = editor.getAttributes('link');
-      if (!href || href === '') {
-        editor.commands.unsetLink();
+      if (isEditingLink) {
+        // Editing existing link: restore original URL and go back to display state
+        if (originalLinkUrl) {
+          editor.commands.setLink({ href: originalLinkUrl });
+        }
+        // Don't hide the bubble menu, just exit edit mode
+        showLinkMenu = false;
+        linkUrl = '';
+        originalLinkUrl = '';
+        isEditingLink = false;
+        // Keep isHoveringLink = true so bubble menu stays visible
       } else {
-        // If we were editing an existing link, restore its original URL
-        editor.commands.setLink({ href: originalLinkUrl });
-        currentLinkUrl = originalLinkUrl; // Update display to show restored URL
+        // Creating new link: delete the empty link entirely
+        const { href } = editor.getAttributes('link');
+        if (!href || href === '') {
+          editor.commands.unsetLink();
+        }
+        // Hide bubble menu completely for new link cancellation
+        showLinkMenu = false;
+        linkUrl = '';
+        originalLinkUrl = '';
+        isEditingLink = false;
+        isHoveringLink = false;
+        linkContextMenu = false;
       }
     }
     
-    showLinkMenu = false;
-    linkUrl = '';
-    originalLinkUrl = '';
-    isEditingLink = false;
-    isHoveringLink = false;
-    linkContextMenu = false;
-    
+    // Always refocus editor
     if (editor) {
       editor.commands.focus();
     }
@@ -1197,7 +1236,6 @@
             const href = editor.getAttributes('link').href || '';
             linkUrl = href;
             originalLinkUrl = href; // Store original URL
-            currentLinkUrl = href; // Set current URL for display
             isEditingLink = true;
             showLinkMenu = true;
           }}
@@ -1214,9 +1252,11 @@
                   <span class="text-gray-400 italic">New link</span>
                 {/if}
               {:else}
-                <!-- When hovering/viewing, show the currentLinkUrl -->
-                {#if currentLinkUrl}
-                  {currentLinkUrl}
+                <!-- When hovering/viewing, show the current link URL from DOM -->
+                {@const currentUrl = currentLinkUrl}
+                {@const _ = linkRefreshTrigger} <!-- Force reactivity -->
+                {#if currentUrl}
+                  {currentUrl}
                 {:else}
                   <span class="text-gray-400 italic">New link</span>
                 {/if}
