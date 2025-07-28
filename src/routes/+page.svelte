@@ -2,85 +2,74 @@
   import { onMount, onDestroy } from 'svelte';
   import { Editor } from '@tiptap/core';
   import StarterKit from '@tiptap/starter-kit';
+  import BulletList from '@tiptap/extension-bullet-list';
+  import TaskList from '@tiptap/extension-task-list';
+  import TaskItem from '@tiptap/extension-task-item';
   import Placeholder from '@tiptap/extension-placeholder';
-  import { user, authActions } from '$lib/stores/auth.js';
-  import { checkOnlineStatus } from '$lib/utils/auth.js';
-  import { notes, notesActions, isLoading } from '$lib/stores/notes.js';
+  import Collaboration from '@tiptap/extension-collaboration';
+  import * as Y from 'yjs';
+  import { IndexeddbPersistence } from 'y-indexeddb';
   import { TimelineMark } from '$lib/tiptap/TimelineMark.js';
   
-  let isOnline = true;
-  let topBarHovered = false;
   let searchQuery = '';
   let editor;
   let element;
   
-  onMount(async () => {
-    // Check online status
-    isOnline = await checkOnlineStatus();
-    
-    // Listen for online/offline events
-    if (typeof window !== 'undefined') {
-      window.addEventListener('online', () => isOnline = true);
-      window.addEventListener('offline', () => isOnline = false);
-    }
-
-    // Load notes from Supabase
-    await notesActions.loadNotes();
-    
-    // Initialize Tiptap editor
+  // Simple timeline management
+  let timelinePosition = null;
+  
+  // Y.js document for collaboration
+  const ydoc = new Y.Doc();
+  let indexeddbProvider;
+  
+  onMount(() => {
+    // Initialize Tiptap editor with basic extensions
     editor = new Editor({
       element: element,
       extensions: [
-        StarterKit,
+        // TaskList first to handle `- [ ]` before BulletList handles `- `
+        TaskList,
+        TaskItem.configure({
+          nested: true,
+        }),
+        // BulletList AFTER TaskList so TaskList gets priority for `- [ ]`
+        BulletList,
+        // StarterKit without BulletList and without undo/redo (Y.js handles history)
+        StarterKit.configure({
+          bulletList: false,
+          history: false, // Disable default undo/redo for Y.js collaboration
+        }),
+        // Y.js Collaboration extension
+        Collaboration.configure({
+          document: ydoc,
+        }),
         TimelineMark,
         Placeholder.configure({
           placeholder: 'Start writing your thoughts...',
         }),
       ],
-      content: notesActions.buildTimelineDocument($notes),
-      onUpdate: ({ editor }) => {
-        // Auto-save functionality could go here
-      },
-      editorProps: {
-        handleKeyDown: (view, event) => {
-          // Handle Enter key to save current line
-          if (event.key === 'Enter' && !event.shiftKey) {
-            const { selection } = view.state;
-            const currentPos = selection.from;
-            
-            // Get current line content
-            const doc = view.state.doc;
-            const currentNode = doc.nodeAt(currentPos);
-            const resolvedPos = doc.resolve(currentPos);
-            const currentParagraph = resolvedPos.parent;
-            
-            if (currentParagraph && currentParagraph.textContent.trim()) {
-              // Save the current line
-              notesActions.saveNote(currentParagraph.textContent, new Date());
-            }
-            
-            return false; // Allow normal Enter behavior
-          }
-          return false;
-        }
+      // No initial content - Y.js will manage document state
+    });
+
+    // Initialize IndexedDB persistence for offline storage
+    indexeddbProvider = new IndexeddbPersistence('timeline-notes', ydoc);
+    
+    // Set initial content only once when Y.js document is synced
+    indexeddbProvider.whenSynced.then(() => {
+      if (ydoc.getMap('config').get('initialContentLoaded') !== true && editor) {
+        ydoc.getMap('config').set('initialContentLoaded', true);
+        editor.commands.setContent(getInitialContent());
       }
     });
 
-    // Watch for notes changes and update editor
-    const unsubscribe = notes.subscribe((currentNotes) => {
-      if (editor && !$isLoading) {
-        const newContent = notesActions.buildTimelineDocument(currentNotes);
-        const currentContent = editor.getJSON();
-        
-        // Only update if content actually changed to avoid cursor jumps
-        if (JSON.stringify(newContent) !== JSON.stringify(currentContent)) {
-          editor.commands.setContent(newContent);
-        }
-      }
-    });
-
+    // Set initial timeline position
+    updateTimelinePosition();
+    
+    // Update timeline position every minute
+    const timelineInterval = setInterval(updateTimelinePosition, 60000);
+    
     return () => {
-      unsubscribe();
+      clearInterval(timelineInterval);
     };
   });
 
@@ -88,101 +77,121 @@
     if (editor) {
       editor.destroy();
     }
+    // Clean up IndexedDB provider
+    if (indexeddbProvider) {
+      indexeddbProvider.destroy();
+    }
+    // Clean up Y.js document
+    ydoc.destroy();
   });
   
-  function handleSearch() {
-    if (searchQuery.trim()) {
-      // TODO: Implement search within editor content
-      console.log('Searching for:', searchQuery);
-    }
+  function getInitialContent() {
+    return {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'text',
+              text: 'Welcome to your timeline notes! Add content above and below the timeline marker.'
+            }
+          ]
+        },
+        {
+          type: 'paragraph',
+          marks: [{ type: 'timeline' }],
+          content: []
+        },
+        {
+          type: 'paragraph',
+          content: []
+        }
+      ]
+    };
   }
   
-  function focusAtTimeline() {
-    if (editor) {
-      // Find the timeline mark and position cursor there
-      const { doc } = editor.state;
-      let timelinePos = null;
+  function updateTimelinePosition() {
+    if (!editor) return;
+    
+    const { doc } = editor.state;
+    let timelinePos = null;
+    
+    // Find existing timeline mark
+    doc.descendants((node, pos) => {
+      if (node.marks.some(mark => mark.type.name === 'timeline')) {
+        timelinePos = pos;
+        return false; // Stop searching
+      }
+    });
+    
+    timelinePosition = timelinePos;
+  }
+  
+  function handleSearch() {
+    if (searchQuery.trim() && editor) {
+      // Simple text search within editor
+      const content = editor.getText();
+      const searchIndex = content.toLowerCase().indexOf(searchQuery.toLowerCase());
       
-      doc.descendants((node, pos) => {
-        if (node.marks.some(mark => mark.type.name === 'timeline')) {
-          timelinePos = pos;
-          return false; // Stop searching
-        }
-      });
-      
-      if (timelinePos !== null) {
+      if (searchIndex !== -1) {
+        // Focus editor and try to position cursor near found text
         editor.commands.focus();
-        editor.commands.setTextSelection(timelinePos);
+        // Note: More sophisticated search/highlight would require additional extensions
+        console.log('Found text at position:', searchIndex);
       } else {
-        // If no timeline found, focus at end
-        editor.commands.focus('end');
+        console.log('Text not found');
       }
     }
   }
   
-  function logout() {
-    authActions.logout();
+  function focusAtTimeline() {
+    if (editor && timelinePosition !== null) {
+      editor.commands.focus();
+      editor.commands.setTextSelection(timelinePosition);
+      
+      // Scroll the timeline marker into view
+      setTimeout(() => {
+        const timelineElement = document.querySelector('.timeline-marker');
+        if (timelineElement) {
+          timelineElement.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center' 
+          });
+        }
+      }, 100);
+    } else if (editor) {
+      // If no timeline found, focus at end
+      editor.commands.focus('end');
+    }
+  }
+  
+  function addTodoList() {
+    if (editor) {
+      editor.commands.focus();
+      editor.commands.toggleTaskList();
+    }
   }
 </script>
 
-<!-- Top Bar -->
-<div 
-  class="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200 transition-opacity duration-300 {topBarHovered ? 'opacity-100' : 'opacity-10'}"
-  on:mouseenter={() => topBarHovered = true}
-  on:mouseleave={() => topBarHovered = false}
->
-  <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-    <!-- Phone Number -->
-    <div class="flex items-center space-x-3">
-      <div class="text-sm font-medium text-gray-900">
-        {$user?.phone || $user?.email || 'Loading...'}
-      </div>
-      <button 
-        on:click={logout}
-        class="text-xs text-gray-500 hover:text-red-600 transition-colors"
-      >
-        Sign Out
-      </button>
-    </div>
-    
-    <!-- Online/Offline Indicator -->
-    <div class="flex items-center space-x-2">
-      <div class="w-2 h-2 rounded-full {isOnline ? 'bg-green-500' : 'bg-red-500'}"></div>
-      <span class="text-sm text-gray-600">
-        {isOnline ? 'Online' : 'Offline'}
-      </span>
-    </div>
-  </div>
+<!-- Fullscreen Editor -->
+<div class="fixed inset-0 bg-white">
+  <div 
+    bind:this={element}
+    class="h-full w-full prose max-w-prose mx-auto focus-within:outline-none p-8 overflow-y-auto"
+  />
 </div>
 
-<!-- Main Editor Area -->
-<div class="pt-16 pb-20 min-h-screen bg-white">
-  <div class="max-w-4xl mx-auto px-4 py-8">
-    {#if $isLoading}
-      <div class="flex items-center justify-center py-12">
-        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span class="ml-3 text-gray-600">Loading your notes...</span>
-      </div>
-    {:else}
-      <!-- Tiptap Editor -->
-      <div 
-        bind:this={element}
-        class="prose prose-lg max-w-none focus-within:outline-none min-h-[60vh] px-4 py-8"
-      />
-    {/if}
-  </div>
-</div>
-
-<!-- Bottom Bar -->
-<div class="fixed bottom-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-t border-gray-200">
-  <div class="max-w-4xl mx-auto px-4 py-3 flex items-center space-x-4">
+<!-- Floating Bottom Controls -->
+<div class="fixed bottom-0 left-0 right-0 z-50 pointer-events-none">
+  <div class="max-w-4xl mx-auto px-4 py-3 flex items-center space-x-4 pointer-events-auto">
     <!-- Search Box -->
     <div class="flex-1 max-w-md relative">
       <input
         type="text"
         bind:value={searchQuery}
         placeholder="Search notes..."
-        class="w-full bg-gray-100 rounded-full pl-4 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+        class="w-full bg-white/90 backdrop-blur-md shadow-lg rounded-full pl-4 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all border border-gray-200"
         on:keypress={(e) => e.key === 'Enter' && handleSearch()}
       />
       <button
@@ -198,12 +207,22 @@
     <!-- Focus Timeline Button -->
     <button
       on:click={focusAtTimeline}
-      class="w-1/3 bg-blue-600 text-white rounded-full px-4 py-2 text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors flex items-center justify-center space-x-2"
+      class="bg-blue-600/90 backdrop-blur-md text-white rounded-full p-3 text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors flex items-center justify-center shadow-lg"
+    >
+      <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+        <circle cx="12" cy="6" r="3" />
+        <path d="M12 9L12 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      </svg>
+    </button>
+    
+    <!-- Todo List Button -->
+    <button
+      on:click={addTodoList}
+      class="bg-gray-400/90 backdrop-blur-md text-white rounded-full px-3 py-2 text-sm font-medium hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition-colors flex items-center justify-center shadow-lg"
     >
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
       </svg>
-      <span>Jump to Now</span>
     </button>
   </div>
 </div>
@@ -212,7 +231,26 @@
   :global(.ProseMirror) {
     outline: none;
     padding: 1rem;
-    line-height: 1.8;
+    line-height: 1.25;
+    height: 100%;
+    font-family: 'Lora', serif;
+    font-size: 12pt;
+  }
+  
+  /* Apply consistent padding and remove margins from all paragraph-like elements */
+  :global(.ProseMirror p),
+  :global(.ProseMirror h1),
+  :global(.ProseMirror h2), 
+  :global(.ProseMirror h3),
+  :global(.ProseMirror h4),
+  :global(.ProseMirror h5),
+  :global(.ProseMirror h6),
+  :global(.ProseMirror li),
+  :global(.ProseMirror blockquote),
+  :global(.ProseMirror ul),
+  :global(.ProseMirror ol) {
+    padding: 0.25rem; /* p-1 equivalent */
+    margin: 0; /* Remove all margins */
   }
   
   :global(.ProseMirror p.is-editor-empty:first-child::before) {
@@ -229,6 +267,7 @@
     width: 100%;
     margin: 1rem 0;
     border-top: 2px solid #3b82f6;
+    min-height: 2px;
   }
   
   :global(.timeline-marker::before) {
@@ -242,5 +281,64 @@
     padding: 0.25rem 0.5rem;
     border-radius: 9999px;
     transform: translateY(50%);
+  }
+  
+  /* Task list styles */
+  :global(.ProseMirror ul[data-type="taskList"]) {
+    list-style: none;
+    padding: 0;
+  }
+  
+  :global(.ProseMirror ul[data-type="taskList"] li) {
+    display: flex;
+    align-items: center; /* Center items vertically */
+  }
+  
+  :global(.ProseMirror ul[data-type="taskList"] li > label) {
+    flex: 0 0 auto;
+    margin-right: 0.5rem;
+    user-select: none;
+    display: flex;
+    align-items: center;
+  }
+  
+  :global(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]) {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%; /* Make circular */
+    border: 1px solid #d1d5db;
+    margin: 0;
+    cursor: pointer;
+    background-color: white;
+    position: relative;
+    transition: all 0.2s ease;
+  }
+  
+  :global(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]:checked) {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+  }
+  
+  :global(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]:checked::after) {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+  }
+  
+  :global(.ProseMirror ul[data-type="taskList"] li > div) {
+    flex: 1 1 auto;
+  }
+  
+  /* Bullet list styles */
+  :global(.ProseMirror ul:not([data-type="taskList"])) {
+    list-style-type: disc;
+    padding-left: 1.5rem;
   }
 </style>

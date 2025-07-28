@@ -1,50 +1,54 @@
 Notes from LLM agents:
 
 ## Project Overview
-(agent:init) zai is a notes app built with SvelteKit, TailwindCSS, and designed as a PWA with offline capabilities. Uses Twilio for SMS authentication and Supabase for user data persistence.
+(agent:contenteditable-basics) zai is a simplified timeline-based notes app built with SvelteKit and TipTap editor. Uses localStorage for persistence and focuses on a clean, distraction-free writing experience with timeline navigation.
 
 ## Architecture Decisions
-(agent:init) **Framework**: SvelteKit chosen for robust SSR, excellent PWA support, and modern development experience
-(agent:init) **Authentication**: Twilio Verify API for SMS verification with simple token storage in secure cookies
-(agent:init) **Database**: Supabase for user management with graceful fallback when not configured
-(agent:init) **State Management**: Svelte stores for reactive auth state with cookie persistence
-(agent:init) **Styling**: TailwindCSS for responsive, modern UI components
-(agent:init) **PWA**: @vite-pwa/sveltekit plugin with workbox for offline functionality
+(agent:contenteditable-basics) **Framework**: SvelteKit chosen for modern development experience and excellent integration with TipTap
+(agent:contenteditable-basics) **Editor**: TipTap with StarterKit, TaskList, TaskItem extensions for rich text editing
+(agent:contenteditable-basics) **Storage**: localStorage for simple client-side persistence (preparing for y.js collaboration)
+(agent:contenteditable-basics) **State Management**: Simple local state with auto-save to localStorage
+(agent:contenteditable-basics) **Styling**: TailwindCSS for clean, minimal UI
 
 ## Current Implementation Status
-(agent:init) ✅ Basic SvelteKit app scaffold with TailwindCSS
-(agent:init) ✅ PWA configuration with offline support and manifest
-(agent:init) ✅ Responsive login UI with offline detection ("you have to log in online")
-(agent:homepage) ✅ Homepage with floating top/bottom bars and vertical timeline layout
-(agent:homepage) ✅ Top bar with phone number display, online/offline indicator, auto-dim on hover
-(agent:homepage) ✅ Bottom bar with search functionality and "Jump to Now" button
-(agent:homepage) ✅ Tiptap editor integration with custom Timeline mark extension
-(agent:homepage) ✅ Notes storage system with Supabase integration
-(agent:homepage) ✅ Timeline-based document building (past notes + timeline marker + future space)
-(agent:homepage) ✅ Enter key auto-save of current line with timestamp
-(agent:homepage) ✅ Client-side ID generation: 32-bit timestamp + 16-bit user + 16-bit random (fits bigint)
-(agent:homepage) ✅ **MIGRATED TO SUPABASE AUTH**: Phone SMS authentication with proper JWT tokens
-(agent:homepage) ✅ **PROPER RLS**: auth.uid() based policies working correctly
-(agent:homepage) ✅ Simplified auth store with automatic session management
+(agent:contenteditable-basics) ✅ Basic SvelteKit app with simplified structure (removed auth/backend complexity)
+(agent:contenteditable-basics) ✅ TipTap editor with bullet lists, todo lists, and timeline functionality
+(agent:contenteditable-basics) ✅ Custom Timeline mark extension for "Now" indicators
+(agent:contenteditable-basics) ✅ Auto-save to localStorage on content changes
+(agent:contenteditable-basics) ✅ Timeline navigation with "Jump to Now" button that scrolls timeline marker to center
+(agent:contenteditable-basics) ✅ Basic search functionality within editor content
+(agent:contenteditable-basics) ✅ Clean toolbar with easy access to bullet lists, todo lists, and timeline insertion
+(agent:contenteditable-basics) ✅ Responsive bottom bar with search and timeline navigation
 
-## Environment Setup Required
-(agent:homepage) **Step 1**: Create `.env` file with: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
-(agent:homepage) **Step 2**: In Supabase Dashboard > Authentication > Providers > Enable "Phone" and configure Twilio
-(agent:homepage) **Step 3**: Run `supabase-schema.sql` in your Supabase SQL editor to create the notes table with proper auth
+## Features
+(agent:contenteditable-basics) **Timeline-based writing**: Insert timeline markers to organize content by time
+(agent:contenteditable-basics) **Jump to Now**: Quick navigation to scroll timeline marker to center of screen
+(agent:contenteditable-basics) **Rich formatting**: Bullet lists, numbered lists, and interactive todo lists
+(agent:contenteditable-basics) **Auto-save**: Content automatically saved to localStorage on changes
+(agent:contenteditable-basics) **Search**: Basic text search within editor content
 
 ## Development Commands
-(agent:init) Run development server: `bun run dev`
-(agent:init) Build for production: `bun run build`
-(agent:init) Preview build: `bun run preview`
+(agent:contenteditable-basics) Install dependencies: `bun install`
+(agent:contenteditable-basics) Run development server: `bun run dev`
+(agent:contenteditable-basics) Build for production: `bun run build`
 
 ## Technical Notes
-(agent:homepage) **Supabase Auth**: Uses built-in phone authentication with Twilio backend (configured in dashboard)
-(agent:homepage) **JWT Tokens**: Proper Supabase JWT with auth.uid() for RLS integration
-(agent:homepage) **RLS**: Simple policy `auth.uid() = user_id` - database-level security working perfectly
-(agent:homepage) **Session Management**: Automatic with `onAuthStateChange()` - handles refresh/expiry
-(agent:homepage) Timeline-based note system: all notes loaded into single Tiptap document with timeline mark at current time
-(agent:homepage) Custom Tiptap Timeline mark extension renders "Now" indicator with blue line
-(agent:homepage) Enter key saves current paragraph to Supabase with client timestamp
-(agent:homepage) Client-side ID generation: timestamp(32) + phone(16) + random(16) = 64-bit bigint compatible
-(agent:homepage) Optimistic updates: add to local store immediately, rollback if Supabase save fails
-(agent:homepage) **Code Reduction**: ~200 lines of custom auth → ~50 lines with Supabase Auth
+(agent:contenteditable-basics) **Editor Extensions**: StarterKit (no history), TaskList/TaskItem (todos), Collaboration, Placeholder, custom TimelineMark
+(agent:contenteditable-basics) **Timeline Implementation**: Custom mark extension that renders "Now" indicator with blue line styling
+(agent:contenteditable-basics) **Y.js CRDT Backend**: Real-time collaborative document state with conflict resolution
+(agent:contenteditable-basics) **IndexedDB Persistence**: Local offline storage with automatic Y.Doc sync via y-indexeddb
+(agent:contenteditable-basics) **Timeline Navigation**: Finds timeline marks in document and scrolls them to viewport center
+(agent:contenteditable-basics) **Document State**: Y.Doc + IndexedDB manages all content, zero localStorage dependency
+
+## Current Y.js Integration
+(agent:contenteditable-basics) ✅ **Y.js CRDT collaboration**: Integrated @tiptap/extension-collaboration with yjs for real-time editing
+(agent:contenteditable-basics) ✅ **Conflict-free document state**: Y.Doc manages all document state instead of localStorage  
+(agent:contenteditable-basics) ✅ **Collaborative history**: Disabled StarterKit history in favor of Y.js collaborative undo/redo
+(agent:contenteditable-basics) ✅ **Smart initial content**: Content loaded once per document using Y.js config map
+(agent:contenteditable-basics) ✅ **IndexedDB persistence**: Offline storage with y-indexeddb for local data persistence
+(agent:contenteditable-basics) ✅ **Proper cleanup**: Y.js document and IndexedDB provider destroyed on component unmount
+
+## Next Steps
+(agent:contenteditable-basics) Add WebSocket provider (y-websocket) for multi-user real-time synchronization
+(agent:contenteditable-basics) Implement awareness for cursor positions and user presence
+(agent:contenteditable-basics) Timeline positioning system in place for advanced time-based navigation features
