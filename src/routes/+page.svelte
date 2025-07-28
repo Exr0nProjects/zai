@@ -28,6 +28,7 @@
   import { ExtendedListItem } from '$lib/tiptap/ExtendedListItem.js';
   import { ExtendedTaskItem } from '$lib/tiptap/ExtendedTaskItem.js';
   import { BlockInfoDecorator } from '$lib/tiptap/BlockInfoDecorator.js';
+  import { TimestampPlugin } from '$lib/tiptap/TimestampPlugin.js';
   import ListKeymap from '@tiptap/extension-list-keymap';
   import { initializeSnowflakeGenerator } from '$lib/utils/snowflake.js';
   import { getAllBlocks, sortBlocksByTimestamp, getBlockStats } from '$lib/utils/blockSorting.js';
@@ -110,6 +111,7 @@
         
         TimelineMark,
         BlockInfoDecorator,
+        TimestampPlugin, // Automatically adds timestamps without interfering with keymaps
         Placeholder.configure({
           placeholder: 'What do you think?',
         }),
@@ -137,6 +139,8 @@
         // Initialize block IDs for existing content after a short delay
         setTimeout(() => {
           initializeExistingBlocks();
+          // Focus the editor after initialization
+          editor.commands.focus();
         }, 100);
       }
     });
@@ -365,6 +369,7 @@
   <div 
     bind:this={element}
     class="prose max-w-prose mx-auto focus-within:outline-none px-8"
+    tabindex="0"
   />
 </div>
 
@@ -377,6 +382,7 @@
         type="text"
         bind:value={searchQuery}
         placeholder="Search notes..."
+        tabindex="-1"
         class="w-full bg-white/90 backdrop-blur-md shadow-lg rounded-full pl-4 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all border border-gray-200"
         on:keypress={(e) => e.key === 'Enter' && handleSearch()}
       />
@@ -393,6 +399,7 @@
     <!-- Go to End Button -->
     <button
       on:click={focusAtEnd}
+      tabindex="-1"
       class="bg-blue-600/90 backdrop-blur-md text-white rounded-full p-3 text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors flex items-center justify-center shadow-lg"
     >
       <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -404,6 +411,7 @@
     <!-- Todo List Button -->
     <button
       on:click={addTodoList}
+      tabindex="-1"
       class="bg-gray-400/90 backdrop-blur-md text-white rounded-full px-3 py-2 text-sm font-medium hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition-colors flex items-center justify-center shadow-lg"
     >
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -414,6 +422,7 @@
     <!-- Block Debug Toggle -->
     <button
       on:click={toggleBlockDebug}
+      tabindex="-1"
       class="bg-purple-400/90 backdrop-blur-md text-white rounded-full px-3 py-2 text-sm font-medium hover:bg-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 transition-colors flex items-center justify-center shadow-lg"
       title="Toggle block debug info"
     >
@@ -423,6 +432,7 @@
     <!-- Sort Blocks Buttons -->
     <button
       on:click={() => sortBlocksByTimestampAction(true)}
+      tabindex="-1"
       class="bg-green-400/90 backdrop-blur-md text-white rounded-full px-3 py-2 text-sm font-medium hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2 transition-colors flex items-center justify-center shadow-lg"
       title="Sort blocks by timestamp (ascending)"
     >
@@ -431,6 +441,7 @@
     
     <button
       on:click={() => sortBlocksByTimestampAction(false)}
+      tabindex="-1"
       class="bg-red-400/90 backdrop-blur-md text-white rounded-full px-3 py-2 text-sm font-medium hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 transition-colors flex items-center justify-center shadow-lg"
       title="Sort blocks by timestamp (descending)"
     >

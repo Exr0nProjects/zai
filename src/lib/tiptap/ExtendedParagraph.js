@@ -31,50 +31,8 @@ export const ExtendedParagraph = Paragraph.extend({
     };
   },
 
-  addKeyboardShortcuts() {
-    return {
-      ...this.parent?.(),
-      Enter: ({ editor }) => {
-        const { state } = editor;
-        const { selection } = state;
-        const currentNode = state.doc.nodeAt(selection.from);
-        const currentNodePos = selection.$from.before();
-        
-        // Get current block's attributes
-        const currentAttrs = state.doc.nodeAt(currentNodePos)?.attrs || {};
-        const currentBlockId = currentAttrs.blockId;
-        
-        // Create new block with fresh ID and timestamp
-        const newBlockId = generateBlockId();
-        const timestamp = getCurrentTimestamp();
-        
-        return editor.chain()
-          .splitBlock()
-          .updateAttributes('paragraph', {
-            blockId: newBlockId,
-            createdAt: timestamp,
-            parentId: currentBlockId,
-          })
-          .run();
-      },
-    };
-  },
+  // Removed addKeyboardShortcuts to avoid interfering with default paragraph behavior
+  // Timestamps are now handled by TimestampPlugin
 
-  onCreate() {
-    // Add ID and timestamp to new paragraphs created programmatically
-    this.editor.on('create', () => {
-      this.editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === 'paragraph' && !node.attrs.blockId) {
-          this.editor.chain()
-            .setNodeSelection(pos)
-            .updateAttributes('paragraph', {
-              blockId: generateBlockId(),
-              createdAt: getCurrentTimestamp(),
-              parentId: null,
-            })
-            .run();
-        }
-      });
-    });
-  },
+  // onCreate removed - TimestampPlugin handles automatic timestamping
 }); 

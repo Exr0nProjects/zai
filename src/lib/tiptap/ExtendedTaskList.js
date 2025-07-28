@@ -31,21 +31,5 @@ export const ExtendedTaskList = TaskList.extend({
     };
   },
 
-  onCreate() {
-    // Add ID and timestamp to new task lists created programmatically
-    this.editor.on('create', () => {
-      this.editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === 'taskList' && !node.attrs.blockId) {
-          this.editor.chain()
-            .setNodeSelection(pos)
-            .updateAttributes('taskList', {
-              blockId: generateBlockId(),
-              createdAt: getCurrentTimestamp(),
-              parentId: null,
-            })
-            .run();
-        }
-      });
-    });
-  },
+  // onCreate removed - TimestampPlugin handles automatic timestamping
 }); 

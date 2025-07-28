@@ -31,21 +31,5 @@ export const ExtendedBulletList = BulletList.extend({
     };
   },
 
-  onCreate() {
-    // Add ID and timestamp to new bullet lists created programmatically
-    this.editor.on('create', () => {
-      this.editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === 'bulletList' && !node.attrs.blockId) {
-          this.editor.chain()
-            .setNodeSelection(pos)
-            .updateAttributes('bulletList', {
-              blockId: generateBlockId(),
-              createdAt: getCurrentTimestamp(),
-              parentId: null,
-            })
-            .run();
-        }
-      });
-    });
-  },
+  // onCreate removed - TimestampPlugin handles automatic timestamping
 }); 
