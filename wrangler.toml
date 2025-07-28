@@ -1,0 +1,6 @@
+compatibility_date = "2025-05-09"  
+name = "zai"
+
+[assets]
+directory            = "./build"                   
+not_found_handling   = "single-page-application"     # SPA fallback  [oai_citation:7‡Cloudflare Docs](https://developers.cloudflare.com/workers/static-assets/)

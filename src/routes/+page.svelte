@@ -1,10 +1,20 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { Editor } from '@tiptap/core';
-  import StarterKit from '@tiptap/starter-kit';
-  import BulletList from '@tiptap/extension-bullet-list';
-  import TaskList from '@tiptap/extension-task-list';
-  import TaskItem from '@tiptap/extension-task-item';
+  import Document from '@tiptap/extension-document';
+  import Text from '@tiptap/extension-text';
+  import Heading from '@tiptap/extension-heading';
+  import Bold from '@tiptap/extension-bold';
+  import Italic from '@tiptap/extension-italic';
+  import Code from '@tiptap/extension-code';
+  import Strike from '@tiptap/extension-strike';
+  import Blockquote from '@tiptap/extension-blockquote';
+  import HorizontalRule from '@tiptap/extension-horizontal-rule';
+  import OrderedList from '@tiptap/extension-ordered-list';
+  import CodeBlock from '@tiptap/extension-code-block';
+  import HardBreak from '@tiptap/extension-hard-break';
+  import Dropcursor from '@tiptap/extension-dropcursor';
+  import Gapcursor from '@tiptap/extension-gapcursor';
   import Placeholder from '@tiptap/extension-placeholder';
   import Collaboration from '@tiptap/extension-collaboration';
   import * as Y from 'yjs';
@@ -12,6 +22,15 @@
   import { SupabaseProvider } from '$lib/providers/SupabaseProvider.js';
   import { user, authActions } from '$lib/stores/auth.js';
   import { TimelineMark } from '$lib/tiptap/TimelineMark.js';
+  import { ExtendedParagraph } from '$lib/tiptap/ExtendedParagraph.js';
+  import { ExtendedBulletList } from '$lib/tiptap/ExtendedBulletList.js';
+  import { ExtendedTaskList } from '$lib/tiptap/ExtendedTaskList.js';
+  import { ExtendedListItem } from '$lib/tiptap/ExtendedListItem.js';
+  import { ExtendedTaskItem } from '$lib/tiptap/ExtendedTaskItem.js';
+  import { BlockInfoDecorator } from '$lib/tiptap/BlockInfoDecorator.js';
+  import ListKeymap from '@tiptap/extension-list-keymap';
+  import { initializeSnowflakeGenerator } from '$lib/utils/snowflake.js';
+  import { getAllBlocks, sortBlocksByTimestamp, getBlockStats } from '$lib/utils/blockSorting.js';
   
   // Online/offline detection
   let isOnline = true;
@@ -23,12 +42,20 @@
   // Simple timeline management
   let timelinePosition = null;
   
+  // Block management
+  let blockStats = { total: 0, byType: {}, withParents: 0, orphaned: 0, timeRange: null };
+  let showBlockDebug = false;
+  
   // Y.js document for collaboration
   const ydoc = new Y.Doc();
   let indexeddbProvider;
   let supabaseProvider;
   
   onMount(() => {
+    // Initialize snowflake generator with user ID (if available)
+    const userId = $user?.id ? parseInt($user.id.slice(-8), 16) : 0;
+    initializeSnowflakeGenerator(userId);
+    
     // Check online status
     isOnline = navigator.onLine;
     
@@ -41,24 +68,50 @@
       element: element,
       extensions: [
         // TaskList first to handle `- [ ]` before BulletList handles `- `
-        TaskList,
-        TaskItem.configure({
+        ExtendedTaskList,
+        ExtendedTaskItem.configure({
           nested: true,
         }),
+        
         // BulletList AFTER TaskList so TaskList gets priority for `- [ ]`
-        BulletList,
-        // StarterKit without BulletList and without undo/redo (Y.js handles history)
-        StarterKit.configure({
-          bulletList: false,
-          history: false, // Disable default undo/redo for Y.js collaboration
+        ExtendedBulletList,
+        
+        // Essential TipTap extensions (no History to avoid Y.js conflicts)
+        Document,
+        ExtendedParagraph,
+        Text,
+        HardBreak,
+        
+        // Typography
+        Heading.configure({
+          levels: [1, 2, 3, 4, 5, 6],
         }),
-        // Y.js Collaboration extension
+        Bold,
+        Italic,
+        Strike,
+        Code,
+        CodeBlock,
+        Blockquote,
+        HorizontalRule,
+        
+        // Lists
+        OrderedList,
+        ExtendedListItem,
+        ListKeymap, // Provides Tab/Shift+Tab behavior for nested lists
+        
+        // UI
+        Dropcursor,
+        Gapcursor,
+        
+        // Y.js Collaboration extension (replaces History)
         Collaboration.configure({
           document: ydoc,
         }),
+        
         TimelineMark,
+        BlockInfoDecorator,
         Placeholder.configure({
-          placeholder: 'Start writing your thoughts...',
+          placeholder: 'What do you think?',
         }),
       ],
       // No initial content - Y.js will manage document state
@@ -80,8 +133,31 @@
       if (ydoc.getMap('config').get('initialContentLoaded') !== true && editor) {
         ydoc.getMap('config').set('initialContentLoaded', true);
         editor.commands.setContent(getInitialContent());
+        
+        // Initialize block IDs for existing content after a short delay
+        setTimeout(() => {
+          initializeExistingBlocks();
+        }, 100);
       }
     });
+    
+    // Update block stats periodically
+    if (editor) {
+      const updateStats = () => {
+        const blocks = getAllBlocks(editor);
+        blockStats = getBlockStats(blocks);
+      };
+      
+      // Update stats on editor changes
+      editor.on('update', updateStats);
+      
+      // Update stats every 10 seconds
+      const statsInterval = setInterval(updateStats, 10000);
+      
+      return () => {
+        clearInterval(statsInterval);
+      };
+    }
 
     // Set initial timeline position
     updateTimelinePosition();
@@ -110,6 +186,55 @@
     ydoc.destroy();
   });
   
+  function initializeExistingBlocks() {
+    if (!editor) return;
+    
+    // Add IDs and timestamps to any existing blocks that don't have them
+    editor.state.doc.descendants((node, pos) => {
+      if (['paragraph', 'listItem', 'taskItem', 'bulletList', 'taskList'].includes(node.type.name)) {
+        if (!node.attrs.blockId) {
+          const blockId = generateBlockId();
+          const timestamp = getCurrentTimestamp();
+          
+          editor.chain()
+            .focus(pos)
+            .updateAttributes(node.type.name, {
+              blockId,
+              createdAt: timestamp,
+              parentId: null,
+            })
+            .run();
+        }
+      }
+    });
+  }
+
+  function sortBlocksByTimestampAction(ascending = true) {
+    if (!editor) return;
+    
+    const blocks = getAllBlocks(editor);
+    const sortedBlocks = sortBlocksByTimestamp(blocks, ascending);
+    
+    console.log('📊 Block sorting:', {
+      total: blocks.length,
+      direction: ascending ? 'ascending' : 'descending',
+      blocks: sortedBlocks.map(b => ({
+        id: b.blockId,
+        type: b.nodeType,
+        created: new Date(b.createdAt).toLocaleString(),
+        content: b.content.slice(0, 50),
+      }))
+    });
+  }
+
+  function toggleBlockDebug() {
+    showBlockDebug = !showBlockDebug;
+    if (showBlockDebug) {
+      const blocks = getAllBlocks(editor);
+      blockStats = getBlockStats(blocks);
+    }
+  }
+
   function getInitialContent() {
     return {
       type: 'doc',
@@ -285,17 +410,137 @@
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
       </svg>
     </button>
+    
+    <!-- Block Debug Toggle -->
+    <button
+      on:click={toggleBlockDebug}
+      class="bg-purple-400/90 backdrop-blur-md text-white rounded-full px-3 py-2 text-sm font-medium hover:bg-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 transition-colors flex items-center justify-center shadow-lg"
+      title="Toggle block debug info"
+    >
+      📊
+    </button>
+    
+    <!-- Sort Blocks Buttons -->
+    <button
+      on:click={() => sortBlocksByTimestampAction(true)}
+      class="bg-green-400/90 backdrop-blur-md text-white rounded-full px-3 py-2 text-sm font-medium hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2 transition-colors flex items-center justify-center shadow-lg"
+      title="Sort blocks by timestamp (ascending)"
+    >
+      ⬆️
+    </button>
+    
+    <button
+      on:click={() => sortBlocksByTimestampAction(false)}
+      class="bg-red-400/90 backdrop-blur-md text-white rounded-full px-3 py-2 text-sm font-medium hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 transition-colors flex items-center justify-center shadow-lg"
+      title="Sort blocks by timestamp (descending)"
+    >
+      ⬇️
+    </button>
   </div>
 </div>
+
+<!-- Block Debug Panel -->
+{#if showBlockDebug}
+  <div class="fixed bottom-20 right-4 max-w-sm bg-white/95 backdrop-blur-md shadow-2xl rounded-lg p-4 border border-gray-200 z-40">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-semibold text-gray-900">Block Debug Info</h3>
+      <button on:click={() => showBlockDebug = false} class="text-gray-400 hover:text-gray-600">×</button>
+    </div>
+    
+    <div class="space-y-2 text-xs text-gray-600">
+      <div><strong>Total Blocks:</strong> {blockStats.total}</div>
+      <div><strong>With Parents:</strong> {blockStats.withParents}</div>
+      <div><strong>Orphaned:</strong> {blockStats.orphaned}</div>
+      
+      {#if Object.keys(blockStats.byType).length > 0}
+        <div><strong>By Type:</strong></div>
+        {#each Object.entries(blockStats.byType) as [type, count]}
+          <div class="ml-2">• {type}: {count}</div>
+        {/each}
+      {/if}
+      
+      {#if blockStats.timeRange}
+        <div><strong>Time Range:</strong></div>
+        <div class="ml-2">From: {blockStats.timeRange.earliest.toLocaleString()}</div>
+        <div class="ml-2">To: {blockStats.timeRange.latest.toLocaleString()}</div>
+      {/if}
+    </div>
+  </div>
+{/if}
 
 <style>
   :global(.ProseMirror) {
     outline: none;
-    padding: 50vh 1rem 100vh 1rem; /* Half screen top, full screen bottom */
+    padding: 30vh 1rem 100vh 1rem; /* Half screen top, full screen bottom */
     line-height: 1.25;
     height: 100%;
     font-family: 'Lora', serif;
     font-size: 12pt;
+  }
+
+  /* Block styling with borders */
+  :global(.block-with-info) {
+    border: 1px solid #000;
+    border-radius: 0.375rem; /* rounded-md */
+    padding: 0.5rem;
+    margin: 0.25rem 0;
+    position: relative;
+  }
+
+  :global(.block-with-info:hover) {
+    background-color: rgba(0, 0, 0, 0.02);
+    border-color: #4f46e5; /* Indigo border on hover */
+  }
+
+  /* Block info tooltip styling */
+  :global(.block-info-tooltip) {
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    padding: 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  :global(.block-info-content) {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  :global(.block-info-row) {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  :global(.block-info-label) {
+    color: #9ca3af;
+    font-weight: 500;
+  }
+
+  :global(.block-info-value) {
+    color: #f3f4f6;
+    font-weight: 600;
+  }
+
+  /* Block indicator in left gutter */
+  :global(.block-indicator) {
+    position: absolute;
+    left: -20px;
+    color: #6b7280;
+    font-size: 1rem;
+    line-height: 1;
+    opacity: 0.3;
+    transition: opacity 0.2s;
+  }
+
+  :global(.block-with-info:hover .block-indicator) {
+    opacity: 1;
+    color: #4f46e5;
   }
   
   /* Apply consistent padding and remove margins from all paragraph-like elements */

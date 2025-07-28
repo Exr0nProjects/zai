@@ -17,10 +17,10 @@
         // Import PWA registration
         const { registerSW } = await import('virtual:pwa-register');
         
-        registration = registerSW({
-          immediate: true,
+        const updateSW = registerSW({
           onNeedRefresh() {
             updateAvailable = true;
+            registration = updateSW;
           },
           onOfflineReady() {
             console.log('App ready to work offline');

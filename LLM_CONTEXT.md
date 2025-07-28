@@ -22,6 +22,11 @@ Notes from LLM agents:
 (agent:contenteditable-basics) ✅ Basic search functionality within editor content
 (agent:contenteditable-basics) ✅ Clean toolbar with easy access to bullet lists, todo lists, and timeline insertion
 (agent:contenteditable-basics) ✅ Responsive bottom bar with search and timeline navigation
+(agent:timestamp) ✅ **Block-level Timestamps**: Extended Paragraph, BulletList, TaskList, ListItem, TaskItem nodes with blockId, createdAt, parentId attributes
+(agent:timestamp) ✅ **Snowflake ID Generator**: 64-bit unique IDs with timestamp, user, hour, and sequence components for reliable block identification
+(agent:timestamp) ✅ **Split Behavior**: When nodes are split (Enter key), new blocks get fresh IDs and timestamps with parent tracking
+(agent:timestamp) ✅ **Block Sorting Utilities**: Functions to extract, sort, and analyze timestamped blocks for timeline-based organization
+(agent:timestamp) ✅ **Debug Interface**: Block debug panel showing stats, hierarchy, and time ranges for development
 
 ## Features
 (agent:contenteditable-basics) **Timeline-based writing**: Insert timeline markers to organize content by time
@@ -29,6 +34,8 @@ Notes from LLM agents:
 (agent:contenteditable-basics) **Rich formatting**: Bullet lists, numbered lists, and interactive todo lists
 (agent:contenteditable-basics) **Auto-save**: Content automatically saved to localStorage on changes
 (agent:contenteditable-basics) **Search**: Basic text search within editor content
+(agent:timestamp) **Block Timestamps**: Every paragraph, list item, and list has unique IDs, creation timestamps, and parent relationships
+(agent:timestamp) **Timestamp Sorting**: Blocks can be sorted chronologically with debug tools for viewing block hierarchy
 
 ## Development Commands
 (agent:contenteditable-basics) Install dependencies: `bun install`
@@ -49,6 +56,10 @@ Notes from LLM agents:
 (agent:contenteditable-basics) **IndexedDB Persistence**: Local offline storage with automatic Y.Doc sync via y-indexeddb
 (agent:contenteditable-basics) **Timeline Navigation**: Finds timeline marks in document and scrolls them to viewport center
 (agent:contenteditable-basics) **Document State**: Y.Doc + IndexedDB + Supabase database manages all content, fully serverless
+(agent:timestamp) **Extended Node Architecture**: Custom TipTap extensions that extend base nodes (Paragraph, BulletList, etc.) with blockId, createdAt, parentId attributes
+(agent:timestamp) **Snowflake IDs**: 64-bit IDs with 42-bit timestamp, 10-bit user ID, 5-bit hour, 7-bit sequence for collision-free identification
+(agent:timestamp) **Block Splitting Logic**: Custom Enter key handlers that preserve parent-child relationships when splitting nodes
+(agent:timestamp) **Block Sorting System**: Utilities for extracting, sorting, and analyzing blocks by creation timestamp for timeline views
 
 ## Current Serverless Integration
 (agent:contenteditable-basics) ✅ **Supabase Authentication**: SMS/phone verification with secure JWT tokens and session management
@@ -77,3 +88,5 @@ Notes from LLM agents:
 (agent:contenteditable-basics) Add document sharing and collaborative permissions system
 (agent:contenteditable-basics) Optimize debouncing and sync strategies for better performance
 (agent:contenteditable-basics) Timeline positioning system in place for advanced time-based navigation features
+(agent:timestamp) Build chronological document views and timeline-based navigation using the new block timestamp system
+(agent:timestamp) Add block reordering capabilities based on timestamps for temporal document organization

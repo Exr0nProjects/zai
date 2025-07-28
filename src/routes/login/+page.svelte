@@ -8,34 +8,32 @@
   let loading = false;
   let error = '';
   
-  // Auto-format phone number for proper international format
-  function formatPhoneNumber(value) {
+  // Standardize phone number format for consistent user identification
+  function standardizePhoneNumber(phone) {
+    if (!phone) return phone;
+    
     // Remove all non-digits
-    const digits = value.replace(/\D/g, '');
+    const digits = phone.replace(/\D/g, '');
     
-    // If it starts with 1, assume US number
-    if (digits.length === 11 && digits.startsWith('1')) {
+    // US phone number logic
+    if (digits.length === 10) {
+      // 10 digits: add +1 country code
+      return `+1${digits}`;
+    } else if (digits.length === 11 && digits.startsWith('1')) {
+      // 11 digits starting with 1: add + prefix
       return `+${digits}`;
-    }
-    // If it's 10 digits, assume US number without country code
-    else if (digits.length === 10) {
+    } else if (phone.startsWith('+') && digits.length >= 10) {
+      // Already has + and sufficient digits: use as-is
+      return phone;
+    } else {
+      // Fallback: assume US number and add +1
       return `+1${digits}`;
     }
-    // If it already starts with +, keep as is
-    else if (value.startsWith('+')) {
-      return value;
-    }
-    // Otherwise, assume US and add +1
-    else if (digits.length > 0) {
-      return `+1${digits}`;
-    }
-    
-    return value;
   }
   
   function handlePhoneInput(event) {
-    const formatted = formatPhoneNumber(event.target.value);
-    phone = formatted;
+    // Store raw input, standardize only when sending
+    phone = event.target.value;
   }
   
   async function sendOTP() {
@@ -47,9 +45,15 @@
     loading = true;
     error = '';
     
-    const result = await authActions.sendOTP(phone);
+    // Standardize phone number only when sending
+    const standardizedPhone = standardizePhoneNumber(phone);
+    console.log('📱 Sending OTP - Raw:', phone, '→ Standardized:', standardizedPhone);
+    
+    const result = await authActions.sendOTP(standardizedPhone);
     
     if (result.success) {
+      // Update display to show standardized version
+      phone = standardizedPhone;
       step = 'otp';
       error = ''; // Clear any previous errors
     } else {
@@ -68,6 +72,7 @@
     loading = true;
     error = '';
     
+    // Use the same standardized phone number
     const result = await authActions.verifyOTP(phone, otp);
     
     if (result.success) {
@@ -140,18 +145,18 @@
         <button
           type="submit"
           disabled={loading}
-          class="group relative w-16 h-16 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg"
+          class="group relative w-10 h-10 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg"
         >
           {#if loading}
-            <div class="animate-spin rounded-full h-6 w-6 border-2 border-white border-t-transparent"></div>
+            <div class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
           {:else if step === 'phone'}
             <!-- Up arrow icon for send OTP -->
-            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12"></path>
             </svg>
           {:else}
             <!-- Right arrow icon for sign in -->
-            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
             </svg>
           {/if}
