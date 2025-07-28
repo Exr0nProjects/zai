@@ -60,11 +60,10 @@
   let showLinkMenu = false;
   let linkUrl = '';
   let originalLinkUrl = ''; // Track original URL for cancel behavior
+  let currentLinkUrl = ''; // Track URL of currently hovered/active link
   let isEditingLink = false;
   let isHoveringLink = false; // Track if hovering over a link
   let linkContextMenu = false; // Track right-click/long-press
-  let displayedLinkUrl = ''; // URL to display in pill (separate from edit URL)
-  let hadTextSelected = false; // Track if text was selected when creating link
   
   // Y.js document for collaboration
   const ydoc = new Y.Doc();
@@ -102,11 +101,9 @@
         editor.commands.insertContent('<a href="">Link</a>');
         // Select the text so user can see it
         editor.commands.setTextSelection(from, from + 4);
-        hadTextSelected = false; // No original text selection
       } else {
         // Text selected, apply placeholder link
         editor.commands.setLink({ href: '' });
-        hadTextSelected = true; // Had original text selection
       }
       
       // Blur editor after setting up link to prevent keyboard conflicts
@@ -114,7 +111,16 @@
         if (editor?.view?.dom) {
           editor.view.dom.blur();
         }
-      }, 10);
+        
+        // Aggressively focus the input after blurring editor
+        setTimeout(() => {
+          const input = document.querySelector('.link-bubble-menu input[type="url"]');
+          if (input) {
+            input.focus();
+            input.select();
+          }
+        }, 10);
+      }, 50);
     }
   }
   
@@ -136,26 +142,27 @@
     if (!normalizedUrl) return;
     
     if (editor) {
+      const { from, to } = editor.state.selection;
+      
       if (isEditingLink) {
-        // Editing existing link
+        // Update existing link (when editing via bubble menu)
         editor.commands.updateAttributes('link', { href: normalizedUrl });
-      } else if (hadTextSelected) {
-        // Had text selected when creating link
-        editor.commands.setLink({ href: normalizedUrl });
-      } else {
+      } else if (from === to) {
         // No text selected, insert link with URL as text
-        console.log('no text selected, inserting link with URL as text')
         editor.commands.insertContent(`<a href="${normalizedUrl}">${normalizedUrl}</a>`);
+      } else {
+        // Text selected, apply link to selection
+        editor.commands.setLink({ href: normalizedUrl });
       }
       
+      // Clean up state
       showLinkMenu = false;
       linkUrl = '';
       originalLinkUrl = '';
-      displayedLinkUrl = '';
+      currentLinkUrl = '';
       isEditingLink = false;
       isHoveringLink = false;
       linkContextMenu = false;
-      hadTextSelected = false; // Reset flag
       
       // Focus back to editor after a brief delay
       setTimeout(() => {
@@ -204,11 +211,6 @@
         showLinkMenu = true;
       }
     }
-    
-    // Update displayed URL when active link changes (but not when editing)
-    if (!showLinkMenu) {
-      displayedLinkUrl = href || 'New link';
-    }
   }
   
   // Auto-focus input when entering edit mode
@@ -224,8 +226,8 @@
       return false;
     };
     
-    // Try multiple times with different delays to ensure focus works after editor blur
-    setTimeout(() => focusInput(), 20);  // After editor blur
+    // Try multiple times with different delays to ensure focus
+    setTimeout(() => focusInput(), 0);
     setTimeout(() => focusInput(), 50);
     setTimeout(() => focusInput(), 100);
     setTimeout(() => focusInput(), 150);
@@ -238,8 +240,8 @@
       const text = linkUrl || 'https://example.com';
       return Math.max(140, Math.min(450, text.length * 8 + 100)); // More padding: 140 min, 450 max, +100 padding
     } else {
-      // When displaying, base width on actual link text + padding
-      const text = editor ? (editor.getAttributes('link').href || 'New link') : 'New link';
+      // When displaying, base width on actual currentLinkUrl + padding
+      const text = currentLinkUrl || 'New link';
       return Math.max(120, Math.min(400, text.length * 8 + 80)); // Standard padding for display
     }
   })();
@@ -308,9 +310,8 @@
         BubbleMenu.configure({
           element: linkMenuElement,
           shouldShow: ({ editor }) => {
-            // Show when: 1) Creating/editing links OR 2) Hovering/right-clicking existing links
-            return showLinkMenu || 
-                   (editor.isActive('link') && (isHoveringLink || linkContextMenu));
+            // Show when editing, hovering over a link, or context menu is active
+            return editor.isActive('link') && (showLinkMenu || isHoveringLink || linkContextMenu);
           },
           pluginKey: 'linkBubbleMenu',
           tippyOptions: {
@@ -374,16 +375,23 @@
         editorDom.addEventListener('mouseover', (e) => {
           const target = e.target.closest('a[href]');
           if (target) {
-            // Position cursor in the link to get its attributes
-            const pos = editor.view.posAtDOM(target, 0);
-            editor.commands.setTextSelection(pos);
+            // Store current selection to restore later
+            const currentSelection = editor.state.selection;
             
-            if (editor.isActive('link')) {
-              isHoveringLink = true;
-              // Update displayed URL for the hovered link
-              if (!showLinkMenu) {
-                displayedLinkUrl = editor.getAttributes('link').href || '';
+            // Temporarily position cursor in the link to get proper TipTap state
+            const pos = editor.view.posAtDOM(target, 0);
+            if (pos !== null) {
+              editor.commands.setTextSelection(pos);
+              
+              // Check if we're now in a link and get its attributes
+              if (editor.isActive('link')) {
+                isHoveringLink = true;
+                const linkAttrs = editor.getAttributes('link');
+                currentLinkUrl = linkAttrs.href || target.href || '';
               }
+              
+              // Restore original selection
+              editor.view.dispatch(editor.state.tr.setSelection(currentSelection));
             }
           }
         });
@@ -392,26 +400,20 @@
           const target = e.target.closest('a[href]');
           if (target && !showLinkMenu) {
             isHoveringLink = false;
+            currentLinkUrl = ''; // Clear currentLinkUrl on mouse out
           }
         });
         
         // Handle right-click on links
         editorDom.addEventListener('contextmenu', (e) => {
           const target = e.target.closest('a[href]');
-          if (target) {
+          if (target && editor.isActive('link')) {
             e.preventDefault();
-            // Position cursor in the link to get its attributes
-            const pos = editor.view.posAtDOM(target, 0);
-            editor.commands.setTextSelection(pos);
-            
-            if (editor.isActive('link')) {
-              linkContextMenu = true;
-              isHoveringLink = true;
-              // Update displayed URL for the right-clicked link
-              if (!showLinkMenu) {
-                displayedLinkUrl = editor.getAttributes('link').href || '';
-              }
-            }
+            linkContextMenu = true;
+            isHoveringLink = true;
+            // Get the href from TipTap's link attributes for accuracy
+            const linkAttrs = editor.getAttributes('link');
+            currentLinkUrl = linkAttrs.href || target.href || '';
           }
         });
         
@@ -419,21 +421,14 @@
         let longPressTimer;
         editorDom.addEventListener('touchstart', (e) => {
           const target = e.target.closest('a[href]');
-          if (target) {
+          if (target && editor.isActive('link')) {
             longPressTimer = setTimeout(() => {
               e.preventDefault();
-              // Position cursor in the link to get its attributes
-              const pos = editor.view.posAtDOM(target, 0);
-              editor.commands.setTextSelection(pos);
-              
-              if (editor.isActive('link')) {
-                linkContextMenu = true;
-                isHoveringLink = true;
-                // Update displayed URL for the long-pressed link
-                if (!showLinkMenu) {
-                  displayedLinkUrl = editor.getAttributes('link').href || '';
-                }
-              }
+              linkContextMenu = true;
+              isHoveringLink = true;
+              // Get the href from TipTap's link attributes for accuracy
+              const linkAttrs = editor.getAttributes('link');
+              currentLinkUrl = linkAttrs.href || target.href || '';
             }, 500); // 500ms long press
           }
         });
@@ -449,15 +444,6 @@
             clearTimeout(longPressTimer);
           }
         });
-        
-        // Handle click outside pill to cancel editing
-        // TODO: Fix click-outside behavior - commenting out for now
-        // document.addEventListener('click', (e) => {
-        //   if (showLinkMenu && linkMenuElement && !linkMenuElement.contains(e.target)) {
-        //     // Clicked outside the pill while editing - cancel edit
-        //     cancelLinkEdit();
-        //   }
-        // });
       }
     }, 100);
 
@@ -764,11 +750,10 @@
     showLinkMenu = false;
     linkUrl = '';
     originalLinkUrl = '';
-    displayedLinkUrl = '';
+    currentLinkUrl = '';
     isEditingLink = false;
     isHoveringLink = false;
     linkContextMenu = false;
-    hadTextSelected = false; // Reset flag
   }
   
   function cancelLinkEdit() {
@@ -780,17 +765,16 @@
       } else {
         // If we were editing an existing link, restore its original URL
         editor.commands.setLink({ href: originalLinkUrl });
+        currentLinkUrl = originalLinkUrl; // Update display to show restored URL
       }
     }
     
     showLinkMenu = false;
     linkUrl = '';
     originalLinkUrl = '';
-    displayedLinkUrl = '';
     isEditingLink = false;
     isHoveringLink = false;
     linkContextMenu = false;
-    hadTextSelected = false; // Reset flag
     
     if (editor) {
       editor.commands.focus();
@@ -1123,7 +1107,6 @@
           class="w-full h-full px-3 text-sm bg-transparent border-none outline-none focus:ring-0 text-center resize-none"
           on:keydown={(e) => {
             if (e.key === 'Enter') {
-              console.log('link enter pressed!!')
               e.preventDefault();
               e.stopPropagation();
               applyLink();
@@ -1151,15 +1134,16 @@
       {:else}
         <!-- Link text display (clickable to edit) -->
         <button
-          on:click={(e) => {
+          on:click={() => {
             // Blur TipTap editor to prevent keyboard conflicts
             if (editor?.view?.dom) {
               editor.view.dom.blur();
             }
             
-            linkUrl = editor.getAttributes('link').href || '';
-            originalLinkUrl = linkUrl; // Store original URL
-            displayedLinkUrl = linkUrl; // Set displayed URL
+            const href = editor.getAttributes('link').href || '';
+            linkUrl = href;
+            originalLinkUrl = href; // Store original URL
+            currentLinkUrl = href; // Set current URL for display
             isEditingLink = true;
             showLinkMenu = true;
           }}
@@ -1167,12 +1151,22 @@
           title="Click to edit link"
         >
           <div class="truncate">
-            {#if showLinkMenu}
-              <!-- Show current edit value when editing -->
-              {linkUrl || 'New link'}
-            {:else}
-              <!-- Show tracked displayed URL when not editing -->
-              {displayedLinkUrl || 'New link'}
+            {#if editor}
+              {#if showLinkMenu}
+                <!-- When editing, show the linkUrl being edited -->
+                {#if linkUrl}
+                  {linkUrl}
+                {:else}
+                  <span class="text-gray-400 italic">New link</span>
+                {/if}
+              {:else}
+                <!-- When hovering/viewing, show the currentLinkUrl -->
+                {#if currentLinkUrl}
+                  {currentLinkUrl}
+                {:else}
+                  <span class="text-gray-400 italic">New link</span>
+                {/if}
+              {/if}
             {/if}
           </div>
           <!-- Fade effect for long URLs -->
