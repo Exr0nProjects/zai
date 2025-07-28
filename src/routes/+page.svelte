@@ -64,6 +64,7 @@
   let isHoveringLink = false; // Track if hovering over a link
   let linkContextMenu = false; // Track right-click/long-press
   let displayedLinkUrl = ''; // URL to display in pill (separate from edit URL)
+  let hadTextSelected = false; // Track if text was selected when creating link
   
   // Y.js document for collaboration
   const ydoc = new Y.Doc();
@@ -101,9 +102,11 @@
         editor.commands.insertContent('<a href="">Link</a>');
         // Select the text so user can see it
         editor.commands.setTextSelection(from, from + 4);
+        hadTextSelected = false; // No original text selection
       } else {
         // Text selected, apply placeholder link
         editor.commands.setLink({ href: '' });
+        hadTextSelected = true; // Had original text selection
       }
       
       // Blur editor after setting up link to prevent keyboard conflicts
@@ -133,20 +136,18 @@
     if (!normalizedUrl) return;
     
     if (editor) {
-      const { from, to } = editor.state.selection;
-      
       if (isEditingLink) {
-        // Update existing link (when editing via bubble menu)
+        // Editing existing link
         editor.commands.updateAttributes('link', { href: normalizedUrl });
-      } else if (from === to) {
-        // No text selected, insert link with URL as text
-        editor.commands.insertContent(`<a href="${normalizedUrl}">${normalizedUrl}</a>`);
-      } else {
-        // Text selected, apply link to selection
+      } else if (hadTextSelected) {
+        // Had text selected when creating link
         editor.commands.setLink({ href: normalizedUrl });
+      } else {
+        // No text selected, insert link with URL as text
+        console.log('no text selected, inserting link with URL as text')
+        editor.commands.insertContent(`<a href="${normalizedUrl}">${normalizedUrl}</a>`);
       }
       
-      // Clean up state
       showLinkMenu = false;
       linkUrl = '';
       originalLinkUrl = '';
@@ -154,6 +155,7 @@
       isEditingLink = false;
       isHoveringLink = false;
       linkContextMenu = false;
+      hadTextSelected = false; // Reset flag
       
       // Focus back to editor after a brief delay
       setTimeout(() => {
@@ -766,6 +768,7 @@
     isEditingLink = false;
     isHoveringLink = false;
     linkContextMenu = false;
+    hadTextSelected = false; // Reset flag
   }
   
   function cancelLinkEdit() {
@@ -787,6 +790,7 @@
     isEditingLink = false;
     isHoveringLink = false;
     linkContextMenu = false;
+    hadTextSelected = false; // Reset flag
     
     if (editor) {
       editor.commands.focus();
@@ -1119,6 +1123,7 @@
           class="w-full h-full px-3 text-sm bg-transparent border-none outline-none focus:ring-0 text-center resize-none"
           on:keydown={(e) => {
             if (e.key === 'Enter') {
+              console.log('link enter pressed!!')
               e.preventDefault();
               e.stopPropagation();
               applyLink();
