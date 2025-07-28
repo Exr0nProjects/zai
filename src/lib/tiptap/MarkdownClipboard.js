@@ -97,8 +97,12 @@ const serializeToMarkdown = (content) => {
           }
           
           result += text;
-                 } else if (child.type.name === 'hardBreak') {
-           result += '\n';
+        } else if (child.type.name === 'mention') {
+          // Handle mention nodes (hashtags)
+          const label = child.attrs.label || child.attrs.id || '';
+          result += `#${label}`;
+        } else if (child.type.name === 'hardBreak') {
+          result += '\n';
         }
       });
     }

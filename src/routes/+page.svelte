@@ -914,7 +914,7 @@
 {#if dev}
   <div class="fixed top-4 right-4 z-[60] pointer-events-none">
     <div class="bg-purple-600/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded shadow-lg font-mono">
-      priority-enter-v10
+      SERIALIZE-MENTIONS
     </div>
   </div>
 {/if}

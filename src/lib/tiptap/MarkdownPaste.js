@@ -28,9 +28,47 @@ const parseInlineMarkdown = (text, schema) => {
   const nodes = [];
   let remainingText = text;
   
-  // For now, just create a simple text node
-  // TODO: Parse inline formatting properly with bold, italic, code, etc.
-  if (remainingText.trim()) {
+  // Parse hashtags first to convert them to mention nodes
+  const hashtagRegex = /(?:^|\s)(#([a-zA-Z0-9_-]{2,}))(?=\s|$|[^\w-])/g;
+  let lastIndex = 0;
+  let match;
+  
+  while ((match = hashtagRegex.exec(remainingText)) !== null) {
+    const beforeTag = remainingText.slice(lastIndex, match.index);
+    const fullMatch = match[1]; // #hashtag
+    const tagName = match[2]; // hashtag
+    const startsWithSpace = match[0].startsWith(' ');
+    
+    // Add text before the tag
+    if (beforeTag || startsWithSpace) {
+      const textToAdd = beforeTag + (startsWithSpace ? ' ' : '');
+      if (textToAdd) {
+        nodes.push(schema.text(textToAdd));
+      }
+    }
+    
+    // Add mention node for hashtag
+    if (schema.nodes.mention) {
+      nodes.push(schema.nodes.mention.create({
+        id: tagName.toLowerCase(),
+        label: tagName.toLowerCase()
+      }));
+    } else {
+      // Fallback if mention node not available
+      nodes.push(schema.text(fullMatch));
+    }
+    
+    lastIndex = match.index + match[0].length;
+  }
+  
+  // Add remaining text after last hashtag
+  const finalText = remainingText.slice(lastIndex);
+  if (finalText.trim()) {
+    nodes.push(schema.text(finalText));
+  }
+  
+  // If no hashtags found, just create a simple text node
+  if (nodes.length === 0 && remainingText.trim()) {
     nodes.push(schema.text(remainingText));
   }
   
