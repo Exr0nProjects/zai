@@ -2,7 +2,7 @@ import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from 'prosemirror-state';
 
 // Markdown serializer function outside the extension
-const serializeToMarkdown = (content) => {
+export const serializeToMarkdown = (content) => {
   let markdown = '';
   
   const processNode = (node, depth = 0) => {
@@ -97,8 +97,12 @@ const serializeToMarkdown = (content) => {
           }
           
           result += text;
-                 } else if (child.type.name === 'hardBreak') {
-           result += '\n';
+        } else if (child.type.name === 'mention') {
+          // Handle mention nodes (hashtags)
+          const label = child.attrs.label || child.attrs.id || '';
+          result += `#${label}`;
+        } else if (child.type.name === 'hardBreak') {
+          result += '\n';
         }
       });
     }

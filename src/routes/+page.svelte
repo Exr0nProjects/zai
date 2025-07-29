@@ -29,7 +29,7 @@
   import { ExtendedTaskItem } from '$lib/tiptap/ExtendedTaskItem.js';
   import { BlockInfoDecorator } from '$lib/tiptap/BlockInfoDecorator.js';
   import { TimestampPlugin } from '$lib/tiptap/TimestampPlugin.js';
-  import { MarkdownClipboard } from '$lib/tiptap/MarkdownClipboard.js';
+  import { MarkdownClipboard, serializeToMarkdown } from '$lib/tiptap/MarkdownClipboard.js';
   import { MarkdownPaste } from '$lib/tiptap/MarkdownPaste.js';
   import ListKeymap from '@tiptap/extension-list-keymap';
   import Link from '@tiptap/extension-link';
@@ -43,6 +43,7 @@
   import { HiddenBlocksPlugin } from '$lib/tiptap/HiddenBlocksPlugin.js';
   import { tagManager, isTagProcessing, tagStats } from '$lib/utils/tagManager.js';
   import { dev } from '$app/environment';
+  import ZaiLogo from '$lib/components/ZaiLogo.svelte';
   
   // Online/offline detection
   let isOnline = true;
@@ -615,16 +616,25 @@
       // Update stats on editor changes
       editor.on('update', () => {
         updateStats();
+        updateDocumentTitle();
         // Debounce tag extraction to avoid excessive processing
         clearTimeout(window.tagExtractionTimeout);
         window.tagExtractionTimeout = setTimeout(extractTags, 2000);
       });
       
+      // Update title on cursor movement
+      editor.on('selectionUpdate', () => {
+        updateDocumentTitle();
+      });
+      
       // Update stats every 10 seconds
       const statsInterval = setInterval(updateStats, 10000);
       
-      // Initial tag extraction
-      setTimeout(extractTags, 1000);
+      // Initial tag extraction and title update
+      setTimeout(() => {
+        extractTags();
+        updateDocumentTitle();
+      }, 1000);
       
       return () => {
         clearInterval(statsInterval);
@@ -738,6 +748,118 @@
     timelinePosition = timelinePos;
   }
   
+  function updateDocumentTitle() {
+    if (!editor) return;
+    
+    try {
+      const { doc, selection } = editor.state;
+      const cursorPos = selection.from;
+      
+      // Find the first non-empty line in the current section
+      const firstLineText = findCurrentSectionFirstLine(doc, cursorPos);
+      
+      if (firstLineText) {
+        // Truncate to reasonable length for title
+        const truncated = firstLineText.length > 50 ? firstLineText.slice(0, 50) + '...' : firstLineText;
+        document.title = `zai - ${truncated}`;
+      } else {
+        document.title = 'zai';
+      }
+    } catch (error) {
+      console.warn('Failed to update document title:', error);
+      document.title = 'zai';
+    }
+  }
+  
+  function findCurrentSectionFirstLine(doc, cursorPos) {
+    // Efficient approach: start from cursor position and work backwards
+    let nodePositions = [];
+    
+    // Build node position map
+    let pos = 0;
+    doc.content.forEach((node, index) => {
+      nodePositions.push({ node, pos, index });
+      pos += node.nodeSize;
+    });
+    
+    console.log('Title debug - cursor at:', cursorPos, 'total nodes:', nodePositions.length);
+    
+    if (nodePositions.length === 0) return null;
+    
+    // Find current node (binary search would be even better for huge docs)
+    let currentNodeIndex = nodePositions.length - 1;
+    for (let i = 0; i < nodePositions.length; i++) {
+      const next = nodePositions[i + 1];
+      if (nodePositions[i].pos <= cursorPos && (!next || next.pos > cursorPos)) {
+        currentNodeIndex = i;
+        break;
+      }
+    }
+    
+    console.log('Title debug - current node index:', currentNodeIndex);
+    
+    // Check if cursor is on an empty line - if so, start from the line above
+    let startIndex = currentNodeIndex;
+    const currentNodeData = nodePositions[currentNodeIndex];
+    const currentText = serializeToMarkdown([currentNodeData.node]).trim();
+    const currentIsEmpty = currentText === '';
+    
+    if (currentIsEmpty) {
+      startIndex = currentNodeIndex - 1;
+      console.log('Title debug - cursor on empty line, starting search from index:', startIndex);
+    }
+    
+    // Work backwards from start position to find section boundary
+    let emptyCount = 0;
+    let foundSectionBoundary = false;
+    let actualSectionStartIndex = null;
+    
+    for (let i = startIndex; i >= 0; i--) {
+      const nodeData = nodePositions[i];
+      const text = serializeToMarkdown([nodeData.node]).trim();
+      const isEmpty = text === '';
+      
+      console.log('Title debug - checking node', i, 'isEmpty:', isEmpty, 'text:', text.slice(0, 20));
+      
+      if (isEmpty) {
+        emptyCount++;
+      } else {
+        // Found non-empty node
+        if (emptyCount >= 2) {
+          // We found 2+ empty lines above this non-empty node (end of previous section)
+          console.log('Title debug - found section boundary at index:', i, 'after', emptyCount, 'empty lines');
+          foundSectionBoundary = true;
+          
+          // Now go forward to find the actual start of current section (after the empty lines)
+          for (let j = i + 1; j <= currentNodeIndex; j++) {
+            const nextNodeData = nodePositions[j];
+            const nextText = serializeToMarkdown([nextNodeData.node]).trim();
+            
+            if (nextText !== '') {
+              actualSectionStartIndex = j;
+              console.log('Title debug - actual section starts at index:', j);
+              break;
+            }
+          }
+          break;
+        }
+        emptyCount = 0; // Reset count
+      }
+    }
+    
+    // If no section with 2+ empty lines above, don't show title
+    if (!foundSectionBoundary || actualSectionStartIndex === null) {
+      console.log('Title debug - no valid section found');
+      return null;
+    }
+    
+    // Return the first line of the current section
+    const nodeData = nodePositions[actualSectionStartIndex];
+    const text = serializeToMarkdown([nodeData.node]).trim();
+    console.log('Title debug - returning first line of current section:', text);
+    return text;
+  }
+  
   function handleSearch() {
     if (searchQuery.trim() && editor) {
       // Simple text search within editor
@@ -825,8 +947,8 @@
         const contentHeight = proseMirror.scrollHeight - window.innerHeight;
         const viewportHeight = window.innerHeight;
         
-        // Center the last line of content in the viewport
-        const targetScroll = contentHeight - (viewportHeight / 2);
+        // Position at 1/3 viewport height instead of center
+        const targetScroll = contentHeight - (viewportHeight / 3);
         
         window.scrollTo({ 
           top: Math.max(0, targetScroll), 
@@ -1004,9 +1126,9 @@
     <div class="flex items-center space-x-2 pointer-events-auto">
       <!-- Tag Processing Indicator -->
       {#if $isTagProcessing}
-        <div class="bg-blue-100/90 backdrop-blur-md shadow-lg rounded-full p-2 animate-pulse"
+        <div class="bg-blue-50/90 backdrop-blur-md shadow-lg rounded-full px-3 py-1.5 border border-blue-200/50 animate-pulse"
              title="Processing tags...">
-          <div class="text-xs">🏷️</div>
+          <div class="text-xs text-blue-600 font-medium">🏷️ processing</div>
         </div>
       {/if}
       
@@ -1024,16 +1146,16 @@
       <!-- Debug Button -->
       <button
         on:click={toggleBlockDebug}
-        class="opacity-10 hover:opacity-100 transition-opacity duration-200 bg-white/90 backdrop-blur-md shadow-lg rounded-full p-2"
+        class="opacity-10 hover:opacity-100 transition-opacity duration-200 bg-white/90 backdrop-blur-md shadow-lg rounded-full px-3 py-1.5 border border-gray-200/50"
         title="Toggle block debug info"
       >
-        <div class="text-xs">📊</div>
+        <div class="text-xs text-gray-600 font-medium">📊 debug</div>
       </button>
       
       <!-- Zai with online indicator -->
       <div class="opacity-10 hover:opacity-100 transition-opacity duration-200">
-        <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2 flex items-center space-x-2">
-          <div class="text-sm text-gray-600 font-light tracking-wide">zai</div>
+        <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2 flex items-center space-x-2 border border-gray-200/50">
+          <ZaiLogo size="sm" color="text-gray-600" />
           <div 
             class="w-1.5 h-1.5 rounded-full {isOnline ? 'bg-green-500' : 'bg-gray-300'} transition-colors duration-200"
             title={isOnline ? 'Online' : 'Offline'}
@@ -1129,35 +1251,29 @@
         
         <!-- Tool Bar (Long Pill) -->
         <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full border border-gray-200 flex items-center divide-x divide-gray-200">
-          <!-- Outdent -->
-          <button
-            on:click={outdentList}
-            tabindex="-1"
-            class="px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors rounded-l-full"
-            title="Outdent"
-          >
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
-              <!-- Two lines representing text, first line normal -->
-              <rect x="2" y="3" width="10" height="1.5" rx="0.5"/>
-              <rect x="2" y="7" width="12" height="1.5" rx="0.5"/>
-              <!-- Small left chevron to show outdenting -->
-              <path d="M1 5.5l1.5-1.5L1 2.5v3z" fill="currentColor"/>
-            </svg>
-          </button>
-          
           <!-- Indent -->
           <button
             on:click={indentList}
             tabindex="-1"
-            class="px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            class="px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors rounded-l-full"
             title="Indent"
           >
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
-              <!-- Two lines representing text, first line indented -->
-              <rect x="4" y="3" width="10" height="1.5" rx="0.5"/>
-              <rect x="2" y="7" width="12" height="1.5" rx="0.5"/>
-              <!-- Small right chevron to show indenting -->
-              <path d="M2.5 2.5L4 4 2.5 5.5V2.5z" fill="currentColor"/>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m15 18 6-6-6-6"/>
+            </svg>
+          </button>
+          
+          <!-- Outdent -->
+          <button
+            on:click={outdentList}
+            tabindex="-1"
+            class="px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            title="Outdent"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m15 18-6-6 6-6"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18-6-6 6-6"/>
             </svg>
           </button>
           
@@ -1459,7 +1575,7 @@
     padding: 0.5rem;
     border-radius: 0.375rem;
     font-size: 0.75rem;
-    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    font-family: 'Barlow', sans-serif;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     pointer-events: none;
     white-space: nowrap;
@@ -1665,5 +1781,40 @@
   :global(.ProseMirror ul:not([data-type="taskList"])) {
     list-style-type: disc;
     padding-left: 1.5rem;
+  }
+  
+  /* Horizontal line after 2nd empty paragraph in sequences of 2+ empty paragraphs */
+  :global(.ProseMirror > p:not(:has(> br.ProseMirror-trailingBreak:only-child)) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child)::after,
+         .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child)::after) {
+    content: '';
+    display: block;
+    width: 100%;
+    height: 1px;
+    background: #e5e7eb;
+    margin-top: 1rem;
+    margin-bottom: 0rem;
+    pointer-events: none;
+  }
+  
+  /* Add padding to empty paragraphs that get the line */
+  :global(.ProseMirror > p:not(:has(> br.ProseMirror-trailingBreak:only-child)) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child),
+         .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child)) {
+    padding-top: 1rem;
+    padding-bottom: 0rem;
+  }
+  
+  /* Select element immediately after two empty paragraphs (after the hline) */
+  :global(.ProseMirror > p:not(:has(> br.ProseMirror-trailingBreak:only-child)) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child) + *,
+         .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child) + *) {
+    padding-top: 2.7rem;
   }
 </style>
