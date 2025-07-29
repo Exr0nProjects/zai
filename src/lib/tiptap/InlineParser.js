@@ -1,144 +1,135 @@
 /**
- * Clean Chip Parser Extension
- * Simple interface: you provide parsers, we handle TipTap integration
+ * Clean Pattern Highlighting Extension
+ * Simple interface: you provide parsers, we highlight patterns with marks
  */
 
-import { Extension, Node } from '@tiptap/core';
+import { Extension, Mark } from '@tiptap/core';
+import * as chrono from 'chrono-node';
 
-// DateChip node - accepts JS Date objects directly
-const DateChip = Node.create({
-  name: 'dateChip',
+export const PARSERS = [
+    {
+        markType: 'patternDate',
+        parse: (text, context) => {
+            // Use chrono with forwardDate option to prefer future dates
+            const results = chrono.parse(text, new Date(), { forwardDate: true });
+            
+            if (context && context.debugMode) {
+                console.log('Chrono parsing:', text, 'found:', results);
+            }
+            
+            return results.map(result => ({
+                start: result.index,
+                end: result.index + result.text.length,
+                value: result.text,
+                parsedDate: result.date()
+            }));
+        }
+    },
+    {
+        markType: 'patternTag',
+        parse: (text, context) => {
+            // search for /(#\w+)/g and return the matches with correct indices
+            const results = [];
+            const regex = /#[-_\w]+/g;
+            let match;
+            
+            while ((match = regex.exec(text)) !== null) {
+                results.push({
+                    start: match.index,
+                    end: match.index + match[0].length,
+                    value: match[0]
+                });
+            }
+            
+            console.log('Parsing tag:', text, 'found:', results);
+            return results;
+        }
+    }  
+]
+
+// Date mark for highlighting date patterns
+const DateMark = Mark.create({
+  name: 'patternDate',
   
-  group: 'inline',
-  inline: true,
-  selectable: true,
-  atom: true,
-
   addAttributes() {
     return {
-      date: {
+      type: {
+        default: 'date',
+        parseHTML: element => element.getAttribute('data-pattern-type'),
+        renderHTML: attributes => ({ 'data-pattern-type': attributes.type }),
+      },
+      value: {
+        default: '',
+        parseHTML: element => element.getAttribute('data-pattern-value'),
+        renderHTML: attributes => ({ 'data-pattern-value': attributes.value }),
+      },
+      parsedDate: {
         default: null,
-        // Store the JS Date as ISO string for serialization
         parseHTML: element => {
-          const dateStr = element.getAttribute('data-date');
+          const dateStr = element.getAttribute('data-parsed-date');
           return dateStr ? new Date(dateStr) : null;
         },
         renderHTML: attributes => {
-          return attributes.date ? { 'data-date': attributes.date.toISOString() } : {};
+          return attributes.parsedDate ? { 'data-parsed-date': attributes.parsedDate.toISOString() } : {};
         },
-      },
-      displayText: {
-        default: '',
-        parseHTML: element => element.getAttribute('data-display-text') || '',
-        renderHTML: attributes => ({ 'data-display-text': attributes.displayText }),
-      },
-      originalText: {
-        default: '',
-        parseHTML: element => element.getAttribute('data-original-text') || '',
-        renderHTML: attributes => ({ 'data-original-text': attributes.originalText }),
       },
     };
   },
 
   parseHTML() {
-    return [{ tag: 'span[data-date-chip]' }];
+    return [{ tag: 'span[data-pattern-date]' }];
   },
 
-  renderHTML({ HTMLAttributes, node }) {
+  renderHTML({ HTMLAttributes, mark }) {
+    const parsedDateAttr = mark.attrs.parsedDate ? 
+      { 'data-parsed-date': mark.attrs.parsedDate.toISOString() } : {};
+      
     return [
       'span',
       {
         ...HTMLAttributes,
-        'data-date-chip': '',
-        class: 'date-chip',
-        contenteditable: 'false',
+        'data-pattern-date': '',
+        'data-pattern-type': mark.attrs.type,
+        'data-pattern-value': mark.attrs.value,
+        'data-hover-target': 'date-pattern',
+        ...parsedDateAttr,
+        class: `pattern-date pattern-date-${mark.attrs.type}`,
+        style: 'position: relative;',
       },
-      node.attrs.displayText || node.attrs.originalText,
+      0,
     ];
-  },
-
-  addNodeView() {
-    return ({ node }) => {
-      const dom = document.createElement('span');
-      dom.setAttribute('data-date-chip', '');
-      dom.className = 'date-chip';
-      dom.contentEditable = 'false';
-      dom.textContent = node.attrs.displayText || node.attrs.originalText;
-      
-      // Add click handler for future interactions
-      dom.addEventListener('click', () => {
-        console.log('Date clicked:', {
-          date: node.attrs.date,
-          originalText: node.attrs.originalText
-        });
-        // Your future date picker logic here
-      });
-      
-      return { dom };
-    };
   },
 });
 
-// TagChip node - accepts tag text (including #)
-const TagChip = Node.create({
-  name: 'tagChip',
+// Tag mark for highlighting tag patterns
+const TagMark = Mark.create({
+  name: 'patternTag',
   
-  group: 'inline',
-  inline: true,
-  selectable: true,
-  atom: true,
-
   addAttributes() {
     return {
-      tagText: {
+      value: {
         default: '',
-        parseHTML: element => element.getAttribute('data-tag-text') || '',
-        renderHTML: attributes => ({ 'data-tag-text': attributes.tagText }),
-      },
-      originalText: {
-        default: '',
-        parseHTML: element => element.getAttribute('data-original-text') || '',
-        renderHTML: attributes => ({ 'data-original-text': attributes.originalText }),
+        parseHTML: element => element.getAttribute('data-pattern-value'),
+        renderHTML: attributes => ({ 'data-pattern-value': attributes.value }),
       },
     };
   },
 
   parseHTML() {
-    return [{ tag: 'span[data-tag-chip]' }];
+    return [{ tag: 'span[data-pattern-tag]' }];
   },
 
-  renderHTML({ HTMLAttributes, node }) {
+  renderHTML({ HTMLAttributes, mark }) {
     return [
       'span',
       {
         ...HTMLAttributes,
-        'data-tag-chip': '',
-        class: 'tag-chip',
-        contenteditable: 'false',
+        'data-pattern-tag': '',
+        'data-pattern-value': mark.attrs.value,
+        class: 'pattern-tag',
       },
-      node.attrs.tagText,
+      0,
     ];
-  },
-
-  addNodeView() {
-    return ({ node }) => {
-      const dom = document.createElement('span');
-      dom.setAttribute('data-tag-chip', '');
-      dom.className = 'tag-chip';
-      dom.contentEditable = 'false';
-      dom.textContent = node.attrs.tagText;
-      
-      // Add click handler for future interactions
-      dom.addEventListener('click', () => {
-        console.log('Tag clicked:', {
-          tagText: node.attrs.tagText,
-          originalText: node.attrs.originalText
-        });
-        // Your future tag logic here
-      });
-      
-      return { dom };
-    };
   },
 });
 
@@ -160,18 +151,7 @@ function getCurrentTypingContext(editor) {
     cursorPos,       // Cursor position within that text
     nodeStart,       // Absolute position in document
     node: currentNode,
-    
-    // Helper to get text around cursor
-    getContextAround(radius = 50) {
-      const start = Math.max(0, cursorPos - radius);
-      const end = Math.min(fullText.length, cursorPos + radius);
-      return {
-        text: fullText.slice(start, end),
-        offsetInFull: start,
-        absoluteStart: nodeStart + start,
-        absoluteEnd: nodeStart + end,
-      };
-    },
+    nodeEnd: nodeStart + currentNode.nodeSize - 2, // -2 for start/end tokens
   };
 }
 
@@ -189,9 +169,78 @@ function getLastTypedChar(transaction) {
   return null;
 }
 
+// Standalone function to process patterns
+function processPatterns(extension, editor) {
+  if (!extension.options.enabled || !extension.options.parsers.length) return;
+  
+  const context = getCurrentTypingContext(editor);
+  if (!context) return;
+  
+  if (extension.options.debugMode) {
+    console.log('🔍 Processing text:', context.fullText);
+  }
+  
+  const { state } = editor;
+  const tr = state.tr;
+  let hasChanges = false;
+  
+  // First, clear existing pattern marks in current block
+  const markTypes = [state.schema.marks.patternDate, state.schema.marks.patternTag];
+  markTypes.forEach(markType => {
+    if (markType) {
+      tr.removeMark(context.nodeStart, context.nodeEnd, markType);
+      hasChanges = true;
+    }
+  });
+  
+  // Run each parser you provided
+  extension.options.parsers.forEach(parser => {
+    try {
+      const results = parser.parse(context.fullText, context);
+      
+      if (results && results.length > 0) {
+        results.forEach(result => {
+          const from = context.nodeStart + result.start;
+          const to = context.nodeStart + result.end;
+          
+          if (extension.options.debugMode) {
+            console.log(`🎨 ${parser.markType} highlighting:`, result);
+          }
+          
+                      // Apply appropriate mark type
+            const markType = state.schema.marks[parser.markType];
+            if (markType) {
+              if (parser.markType === 'patternDate') {
+                tr.addMark(from, to, markType.create({
+                  type: 'date',
+                  value: result.value || result.text || context.fullText.slice(result.start, result.end),
+                  parsedDate: result.parsedDate || null
+                }));
+              } else if (parser.markType === 'patternTag') {
+                tr.addMark(from, to, markType.create({
+                  value: result.value || result.text || context.fullText.slice(result.start, result.end)
+                }));
+              }
+              hasChanges = true;
+            }
+        });
+      }
+    } catch (error) {
+      console.error(`Error in parser ${parser.markType}:`, error);
+    }
+  });
+  
+  // Apply changes if any
+  if (hasChanges) {
+    // Prevent infinite loops by marking this as a programmatic change
+    tr.setMeta('preventParsing', true);
+    editor.view.dispatch(tr);
+  }
+}
+
 // Main extension
 export const InlineParser = Extension.create({
-  name: 'chipParser',
+  name: 'patternHighlighter',
 
   addOptions() {
     return {
@@ -199,14 +248,7 @@ export const InlineParser = Extension.create({
       debugMode: false,
       
       // Array of parser functions you provide
-      parsers: [
-        // Example parser structure (you'll replace these):
-        // {
-        //   name: 'dates',
-        //   parse: (text, context) => [{ start: 0, end: 5, data: new Date() }],
-        //   createChip: 'dateChip'
-        // }
-      ],
+      parsers: PARSERS,
       
       // Completion characters that trigger parsing
       completionChars: [' ', '.', ',', '!', '?', '\n'],
@@ -214,96 +256,35 @@ export const InlineParser = Extension.create({
   },
 
   addExtensions() {
-    return [DateChip, TagChip];
+    return [DateMark, TagMark];
   },
 
   addCommands() {
     return {
-      // Main command: create chip from parser result
-      insertDateChip: ({ from, to, data }) => ({ commands }) => {
-        const displayText = this.options.formatDate ? this.options.formatDate(data.date) : data.originalText;
-        
-        return commands
-          .deleteRange({ from, to })
-          .insertContentAt(from, {
-            type: 'dateChip',
-            attrs: {
-              date: data.date,
-              displayText: data.displayText || displayText,
-              originalText: data.originalText,
-            },
-          });
+      // Main command: highlight patterns in current block
+      highlightPatterns: () => ({ editor }) => {
+        processPatterns(this, editor);
+        return true;
       },
 
-      insertTagChip: ({ from, to, data }) => ({ commands }) => {
-        return commands
-          .deleteRange({ from, to })
-          .insertContentAt(from, {
-            type: 'tagChip',
-            attrs: {
-              tagText: data.tagText,
-              originalText: data.originalText,
-            },
-          });
-      },
-
-      // Helper: run your parsers manually
-      runParsers: () => ({ editor }) => {
-        this.processParsers();
+      // Clear all pattern marks in current block
+      clearPatterns: () => ({ commands }) => {
+        commands.unsetMark('patternDate');
+        commands.unsetMark('patternTag');
         return true;
       },
 
       // Toggle parsing
       toggleParsing: () => ({ editor }) => {
         this.options.enabled = !this.options.enabled;
-        console.log('Chip parsing:', this.options.enabled ? 'enabled' : 'disabled');
+        console.log('Pattern parsing:', this.options.enabled ? 'enabled' : 'disabled');
         return true;
       },
     };
   },
 
-  // Method to process your parsers
-  processParsers() {
-    if (!this.options.enabled || !this.options.parsers.length) return;
-    
-    const context = getCurrentTypingContext(this.editor);
-    if (!context) return;
-    
-    if (this.options.debugMode) {
-      console.log('🔍 Processing text:', context.fullText);
-    }
-    
-    // Run each parser you provided
-    this.options.parsers.forEach(parser => {
-      try {
-        const results = parser.parse(context.fullText, context);
-        
-        if (results && results.length > 0) {
-          // Process results in reverse order to maintain positions
-          results.reverse().forEach(result => {
-            const from = context.nodeStart + result.start;
-            const to = context.nodeStart + result.end;
-            
-            if (this.options.debugMode) {
-              console.log(`🍟 ${parser.name} found:`, result);
-            }
-            
-            // Create appropriate chip type
-            if (parser.createChip === 'dateChip') {
-              this.editor.commands.insertDateChip({ from, to, data: result.data });
-            } else if (parser.createChip === 'tagChip') {
-              this.editor.commands.insertTagChip({ from, to, data: result.data });
-            }
-          });
-        }
-      } catch (error) {
-        console.error(`Error in parser ${parser.name}:`, error);
-      }
-    });
-  },
-
   // Listen for completion triggers
-  onUpdate({ transaction }) {
+  onUpdate({ transaction, editor }) {
     if (!this.options.enabled || !transaction.docChanged) return;
     
     // Only process user typing, not programmatic changes
@@ -316,29 +297,31 @@ export const InlineParser = Extension.create({
         console.log('🎯 Completion trigger:', lastChar);
       }
       
-      // Small delay to ensure DOM is updated
-      setTimeout(() => this.processParsers(), 10);
+      // Use standalone function with extension reference
+      const extension = this;
+      setTimeout(() => processPatterns(extension, editor), 10);
     }
   },
 
   onCreate() {
     if (this.options.debugMode) {
-      console.log('🍟 ChipParser extension loaded');
+      console.log('🎨 Pattern Highlighter extension loaded');
       console.log('📝 Parsers registered:', this.options.parsers.length);
       
       // Add debug helpers to global scope
-      window.runParsers = () => this.editor.commands.runParsers();
+      window.highlightPatterns = () => this.editor.commands.highlightPatterns();
+      window.clearPatterns = () => this.editor.commands.clearPatterns();
       window.toggleParsing = () => this.editor.commands.toggleParsing();
       window.getContext = () => getCurrentTypingContext(this.editor);
+      window.processPatterns = () => processPatterns(this, this.editor);
     }
   },
 });
 
 // Export helper for creating parsers
-export function createParser(name, parseFunction, chipType) {
+export function createParser(markType, parseFunction) {
   return {
-    name,
+    markType, // 'patternDate' or 'patternTag'
     parse: parseFunction,
-    createChip: chipType,
   };
 } 

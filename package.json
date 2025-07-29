@@ -52,6 +52,7 @@
 		"@tiptap/extension-text": "^3.0.7",
 		"@tiptap/pm": "^3.0.7",
 		"@tiptap/suggestion": "^3.0.7",
+		"chrono-node": "^2.8.3",
 		"prosemirror-state": "^1.4.3",
 		"prosemirror-view": "^1.40.1",
 		"tippy.js": "^6.3.7",

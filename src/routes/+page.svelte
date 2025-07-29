@@ -37,9 +37,9 @@
   import Link from '@tiptap/extension-link';
   import BubbleMenu from '@tiptap/extension-bubble-menu';
   import { getAllBlocks, sortBlocksByTimestamp, getBlockStats } from '$lib/utils/blockSorting.js';
-  import { TagMention } from '$lib/tiptap/TagMention.js';
-  import { TagParser } from '$lib/tiptap/TagParser.js';
-  import { InputRuleTagParser } from '$lib/tiptap/InputRuleTagParser.js';
+  // import { TagMention } from '$lib/tiptap/TagMention.js';
+  // import { TagParser } from '$lib/tiptap/TagParser.js';
+  // import { InputRuleTagParser } from '$lib/tiptap/InputRuleTagParser.js';
   import { KeyboardNavigation } from '$lib/tiptap/KeyboardNavigationPlugin.js';
   import { HiddenBlocksPlugin } from '$lib/tiptap/HiddenBlocksPlugin.js';
   import { tagManager, isTagProcessing, tagStats } from '$lib/utils/tagManager.js';
@@ -48,7 +48,8 @@
   import ZaiLogo from '$lib/components/ZaiLogo.svelte';
   import { searchHiddenBlocks } from '../lib/stores/searchHidden.js';
   import { SearchHighlightPlugin } from '../lib/tiptap/SearchHighlightPlugin.js';
-  import { InlineParser, createParser } from '$lib/tiptap/InlineParser.js';
+  import { InlineParser, createParser, PARSERS } from '$lib/tiptap/InlineParser.js';
+  import { HoverStatePlugin } from '$lib/tiptap/HoverStatePlugin.js';
   
   // Debug flags (change these in code as needed)
   const debugNewBlocks = false; // Set to true to show blue borders on new blocks
@@ -480,65 +481,20 @@
         TimestampPlugin, // Automatically adds timestamps without interfering with keymaps
         MarkdownClipboard, // Copy/cut as markdown instead of HTML
         MarkdownPaste, // Parse pasted markdown into proper nodes
-        TagMention, // Tag mentions with # trigger
-        TagParser, // Auto-convert hashtags to tag mentions
-        InputRuleTagParser, // Convert hashtags on typing
+        // TagMention, // Tag mentions with # trigger - disabled, using pattern highlighting instead
+        // TagParser, // Auto-convert hashtags to tag mentions - disabled, using pattern highlighting instead  
+        // InputRuleTagParser, // Convert hashtags on typing - disabled, using pattern highlighting instead
         KeyboardNavigation, // Remove tab index from irrelevant elements
         HiddenBlocksPlugin, // Enable hiding blocks with zero height and no interaction
         Placeholder.configure({
           placeholder: 'What do you think?',
         }),
         SearchHighlightPlugin,
+        HoverStatePlugin, // General hover state management
         InlineParser.configure({
           enabled: true,
           debugMode: true, // Set to true for debugging
-          parsers: [
-            // Example date parser - you'll replace with your sophisticated one
-            createParser('dates', (text, context) => {
-              const results = [];
-              
-              // Simple example: find "tomorrow"
-              const tomorrowMatch = text.match(/tomorrow/gi);
-              if (tomorrowMatch) {
-                const start = text.indexOf(tomorrowMatch[0]);
-                const end = start + tomorrowMatch[0].length;
-                const tomorrow = new Date();
-                tomorrow.setDate(tomorrow.getDate() + 1);
-                
-                results.push({
-                  start,
-                  end,
-                  data: {
-                    date: tomorrow,
-                    originalText: tomorrowMatch[0],
-                    displayText: "Tomorrow"
-                  }
-                });
-              }
-              
-              return results;
-            }, 'dateChip'),
-            
-            // Example tag parser
-            createParser('tags', (text, context) => {
-              const results = [];
-              const tagRegex = /#\w+/g;
-              let match;
-              
-              while ((match = tagRegex.exec(text)) !== null) {
-                results.push({
-                  start: match.index,
-                  end: match.index + match[0].length,
-                  data: {
-                    tagText: match[0],
-                    originalText: match[0]
-                  }
-                });
-              }
-              
-              return results;
-            }, 'tagChip')
-          ],
+          parsers: PARSERS,
           completionChars: [' ', '.', '!', '\n'],
         }),
       ],
@@ -552,17 +508,24 @@
         // Add debug functions to global scope for console access
         window.debugSearchStore = debugSearchStore;
         
-        // Add chip parser debug controls
-        window.toggleChipParser = () => {
+        // Add pattern highlighting debug controls
+        window.togglePatternHighlighting = () => {
           if (editor) {
             editor.commands.toggleParsing();
           }
         };
         
-        window.runParsers = () => {
+        window.highlightPatterns = () => {
           if (editor) {
-            editor.commands.runParsers();
-            console.log('🔍 Manually ran parsers');
+            editor.commands.highlightPatterns();
+            console.log('🎨 Manually highlighted patterns');
+          }
+        };
+        
+        window.clearPatterns = () => {
+          if (editor) {
+            editor.commands.clearPatterns();
+            console.log('🧹 Cleared all pattern highlights');
           }
         };
         
@@ -1365,7 +1328,7 @@
 
 {#if dev}
   <div class="fixed top-4 right-4 z-50 bg-accent-light text-white px-2 py-1 rounded text-xs font-mono pointer-events-none">
-    clean-chip-interface
+    chrono-date-parsing
   </div>
 {/if}
 
