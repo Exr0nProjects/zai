@@ -1,11 +1,32 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from 'prosemirror-state';
+import { get } from 'svelte/store';
+
+// Import the search hidden blocks store to check visibility
+let searchHiddenBlocks;
+if (typeof window !== 'undefined') {
+  import('../stores/searchHidden.js').then(module => {
+    searchHiddenBlocks = module.searchHiddenBlocks;
+  });
+}
+
+// Helper function to check if a block is hidden
+function isBlockHidden(blockId) {
+  if (!searchHiddenBlocks) return false;
+  const hiddenSet = get(searchHiddenBlocks);
+  return hiddenSet.has(blockId);
+}
 
 // Markdown serializer function outside the extension
 export const serializeToMarkdown = (content) => {
   let markdown = '';
   
   const processNode = (node, depth = 0) => {
+    // Skip hidden blocks entirely
+    if (node.attrs && node.attrs.blockId && isBlockHidden(node.attrs.blockId)) {
+      return;
+    }
+    
     const indent = '\t'.repeat(depth);
     
     switch (node.type.name) {
@@ -22,18 +43,30 @@ export const serializeToMarkdown = (content) => {
         
       case 'bulletList':
         node.content.forEach(listItem => {
+          // Skip hidden list items
+          if (listItem.attrs && listItem.attrs.blockId && isBlockHidden(listItem.attrs.blockId)) {
+            return;
+          }
           processListItem(listItem, depth, '-');
         });
         break;
         
       case 'orderedList':
         node.content.forEach((listItem, index) => {
+          // Skip hidden list items
+          if (listItem.attrs && listItem.attrs.blockId && isBlockHidden(listItem.attrs.blockId)) {
+            return;
+          }
           processListItem(listItem, depth, `${index + 1}.`);
         });
         break;
         
       case 'taskList':
         node.content.forEach(listItem => {
+          // Skip hidden list items
+          if (listItem.attrs && listItem.attrs.blockId && isBlockHidden(listItem.attrs.blockId)) {
+            return;
+          }
           const checked = listItem.attrs.checked;
           processListItem(listItem, depth, checked ? '- [x]' : '- [ ]');
         });
@@ -111,6 +144,11 @@ export const serializeToMarkdown = (content) => {
   };
   
   const processListItem = (listItem, depth, prefix) => {
+    // Skip hidden list items
+    if (listItem.attrs && listItem.attrs.blockId && isBlockHidden(listItem.attrs.blockId)) {
+      return;
+    }
+    
     const indent = '\t'.repeat(depth);
     let itemText = '';
     let nestedLists = [];
