@@ -49,6 +49,38 @@ export const BlockInfoDecorator = Extension.create({
         existing.remove();
       }
     };
+
+    const highlightParentBlock = (parentId) => {
+      // Remove any existing parent highlights
+      clearParentHighlights();
+      
+      if (!parentId) return;
+      
+      // Find the parent block element and add highlight class
+      const parentElement = document.querySelector(`[data-block-id="${parentId}"]`);
+      if (parentElement) {
+        parentElement.classList.add('parent-highlighted');
+      }
+    };
+
+    const clearParentHighlights = () => {
+      // Remove parent-highlighted class from all elements
+      const highlighted = document.querySelectorAll('.parent-highlighted');
+      highlighted.forEach(el => el.classList.remove('parent-highlighted'));
+    };
+
+    const addHoverHighlight = (element) => {
+      // Remove any existing hover highlights
+      clearHoverHighlights();
+      // Add hover class to the element
+      element.classList.add('debug-hovered');
+    };
+
+    const clearHoverHighlights = () => {
+      // Remove debug-hovered class from all elements
+      const hovered = document.querySelectorAll('.debug-hovered');
+      hovered.forEach(el => el.classList.remove('debug-hovered'));
+    };
     
     const getTimeAgo = (date) => {
       const now = new Date();
@@ -109,18 +141,37 @@ export const BlockInfoDecorator = Extension.create({
           
           handleDOMEvents: {
             mouseover(view, event) {
-              const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
-              if (!pos) return false;
+              // Find the closest element with block data attributes
+              const target = event.target.closest('[data-block-id]');
+              if (!target) return false;
               
-              const node = view.state.doc.nodeAt(pos.pos);
-              if (node && node.attrs && node.attrs.blockId) {
-                showBlockTooltip(event, node.attrs);
+              const blockId = target.getAttribute('data-block-id');
+              const createdAt = target.getAttribute('data-created-at');
+              const parentId = target.getAttribute('data-parent-id');
+              
+              if (blockId && createdAt) {
+                const attrs = {
+                  blockId,
+                  createdAt: parseInt(createdAt),
+                  parentId: parentId !== 'none' ? parentId : null
+                };
+                
+                // Add hover highlight to the main element
+                addHoverHighlight(target);
+                
+                showBlockTooltip(event, attrs);
+                // Highlight parent block if it exists
+                if (attrs.parentId) {
+                  highlightParentBlock(attrs.parentId);
+                }
               }
               return false;
             },
             
             mouseout(view, event) {
               hideBlockTooltip();
+              clearHoverHighlights();
+              clearParentHighlights();
               return false;
             },
           },

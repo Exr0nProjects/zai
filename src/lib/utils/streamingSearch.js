@@ -1,6 +1,8 @@
 // Streaming search system for timeline-based document filtering
 // Uses search state store to show/hide blocks based on search query
 
+const LOG = false;
+
 import { serializeToMarkdown } from '../tiptap/MarkdownClipboard.js';
 import { hideBlockInSearch, showBlockInSearch, clearSearchHiding, searchHiddenBlocks } from '../stores/searchHidden.js';
 import { get } from 'svelte/store';
@@ -93,7 +95,7 @@ export class StreamingSearch {
       }
     }
 
-    console.log('🎯 Found center-screen block (avoiding hidden):', closestBlock?.blockId);
+    if (LOG) console.log('🎯 Found center-screen block (avoiding hidden):', closestBlock?.blockId);
     return closestBlock;
   }
 
@@ -132,7 +134,7 @@ export class StreamingSearch {
         
         if (element) {
           element.classList.add('search-center-block');
-          console.log('🎯 Highlighted center block:', blockId);
+          if (LOG) console.log('🎯 Highlighted center block:', blockId);
         }
       }
     } catch (error) {
@@ -171,7 +173,7 @@ export class StreamingSearch {
     this.scrollTimeout = setTimeout(() => {
       const newCenterBlock = this.findCenterScreenBlock();
       if (newCenterBlock && newCenterBlock.blockId !== this.centerBlockId) {
-        console.log('📜 Scroll detected - updating center block:', this.centerBlockId, '->', newCenterBlock.blockId);
+        if (LOG) console.log('📜 Scroll detected - updating center block:', this.centerBlockId, '->', newCenterBlock.blockId);
         
         // Remove old highlight and add new one
         this.removeCenterBlockHighlight();
@@ -186,7 +188,7 @@ export class StreamingSearch {
     if (!this.isScrollHandlerActive) {
       window.addEventListener('scroll', this.handleScroll, { passive: true });
       this.isScrollHandlerActive = true;
-      console.log('📜 Started scroll tracking for center block updates');
+      if (LOG) console.log('📜 Started scroll tracking for center block updates');
     }
   }
 
@@ -199,7 +201,7 @@ export class StreamingSearch {
         clearTimeout(this.scrollTimeout);
         this.scrollTimeout = null;
       }
-      console.log('📜 Stopped scroll tracking');
+      if (LOG) console.log('📜 Stopped scroll tracking');
     }
   }
 
@@ -246,7 +248,7 @@ export class StreamingSearch {
               top: scrollOffset,
               behavior: 'smooth'
             });
-            console.log('📜 Scrolled to keep block centered:', blockId);
+            if (LOG) console.log('📜 Scrolled to keep block centered:', blockId);
           }
         }
       }
@@ -263,7 +265,7 @@ export class StreamingSearch {
       return blocks;
     }
     
-    console.log('🔍 Starting getAllBlocks() traversal...');
+    if (LOG) console.log('🔍 Starting getAllBlocks() traversal...');
     let nodeCount = 0;
     
     this.editor.state.doc.descendants((node, pos) => {
@@ -306,14 +308,14 @@ export class StreamingSearch {
       }
     });
     
-    console.log(`🔍 Traversed ${nodeCount} total nodes, collected ${blocks.length} blocks with blockIds`);
+    if (LOG) console.log(`🔍 Traversed ${nodeCount} total nodes, collected ${blocks.length} blocks with blockIds`);
     
     return blocks;
   }
 
   // Main search function - determines desired visibility for all blocks and sets it
   async streamSearch(query, onProgress = null) {
-    console.log('🔍 StreamingSearch.streamSearch called with query:', query);
+    if (LOG) console.log('🔍 StreamingSearch.streamSearch called with query:', query);
     
     // Abort any existing search
     if (this.searchAbortController) {
@@ -322,7 +324,7 @@ export class StreamingSearch {
     
     // Parse query
     const queryWords = this.parseQuery(query);
-    console.log('🔍 Parsed query words:', queryWords);
+    if (LOG) console.log('🔍 Parsed query words:', queryWords);
     
     // Find center-screen block only when transitioning from empty query to non-empty
     const wasEmpty = this.currentQuery.trim() === '';
@@ -332,7 +334,7 @@ export class StreamingSearch {
       const centerBlock = this.findCenterScreenBlock();
       if (centerBlock) {
         this.centerBlockId = centerBlock.blockId;
-        console.log('🎯 Set center block for NEW search (was empty):', this.centerBlockId);
+        if (LOG) console.log('🎯 Set center block for NEW search (was empty):', this.centerBlockId);
         // Highlight the center block
         this.highlightCenterBlock(this.centerBlockId);
         // Start tracking scroll events to update center block
@@ -347,23 +349,23 @@ export class StreamingSearch {
     try {
       // Get all blocks
       const allBlocks = this.getAllBlocks();
-      console.log('📦 Found blocks:', allBlocks.length);
+      if (LOG) console.log('📦 Found blocks:', allBlocks.length);
       
       if (allBlocks.length === 0) {
-        console.log('❌ No blocks found, returning');
+        if (LOG) console.log('❌ No blocks found, returning');
         return;
       }
 
       // Build hierarchical structure for recursive processing
       const hierarchy = this.buildHierarchy(allBlocks);
-      console.log('🌳 Built hierarchy with', hierarchy.length, 'root nodes');
+      if (LOG) console.log('🌳 Built hierarchy with', hierarchy.length, 'root nodes');
 
       let processedCount = 0;
       let matchedCount = 0;
 
       const processSubtree = (node, depth = 0) => {
         if (depth > 30) { // Prevent runaway recursion
-          console.warn('🛑 Max depth reached, stopping recursion');
+          console.warn('🛑 SEARCH Max depth reached, stopping recursion');
           return;
         }
 
@@ -473,7 +475,7 @@ export class StreamingSearch {
         });
       }
 
-      console.log('✅ Search completed - matched:', matchedCount, 'total:', allBlocks.length);
+      if (LOG) console.log('✅ Search completed - matched:', matchedCount, 'total:', allBlocks.length);
 
     } catch (error) {
       console.error('Search error:', error);
@@ -496,14 +498,14 @@ export class StreamingSearch {
 
   // Show all blocks (used when clearing search)
   showAllBlocks() {
-    console.log('👁️ StreamingSearch.showAllBlocks called');
+    if (LOG) console.log('👁️ StreamingSearch.showAllBlocks called');
     clearSearchHiding();
-    console.log('✅ All blocks should now be visible');
+    if (LOG) console.log('✅ All blocks should now be visible');
   }
 
   // Clear current search and show all blocks
   clearSearch() {
-    console.log('🧹 StreamingSearch.clearSearch called');
+    if (LOG) console.log('🧹 StreamingSearch.clearSearch called');
     
     if (this.searchAbortController) {
       this.searchAbortController.abort();
@@ -525,7 +527,7 @@ export class StreamingSearch {
     this.currentQuery = '';
     this.centerBlockId = null; // Reset center block tracking
     
-    console.log('✅ Search cleared, all blocks should be visible');
+    if (LOG) console.log('✅ Search cleared, all blocks should be visible');
   }
 
   // Check if currently searching

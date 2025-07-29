@@ -3,15 +3,22 @@
   import { Editor } from '@tiptap/core';
   import Document from '@tiptap/extension-document';
   import Text from '@tiptap/extension-text';
-  import { ExtendedHeading } from '$lib/tiptap/ExtendedHeading.js';
+  import {
+    ExtendedHeading,
+    ExtendedParagraph,
+    ExtendedBulletList,
+    ExtendedTaskList,
+    ExtendedListItem,
+    ExtendedTaskItem,
+    ExtendedBlockquote,
+    ExtendedHorizontalRule,
+    ExtendedOrderedList,
+    ExtendedCodeBlock
+  } from '$lib/tiptap/extendedNodes.js';
   import Bold from '@tiptap/extension-bold';
   import Italic from '@tiptap/extension-italic';
   import Code from '@tiptap/extension-code';
   import Strike from '@tiptap/extension-strike';
-  import { ExtendedBlockquote } from '$lib/tiptap/ExtendedBlockquote.js';
-  import { ExtendedHorizontalRule } from '$lib/tiptap/ExtendedHorizontalRule.js';
-  import { ExtendedOrderedList } from '$lib/tiptap/ExtendedOrderedList.js';
-  import { ExtendedCodeBlock } from '$lib/tiptap/ExtendedCodeBlock.js';
   import HardBreak from '@tiptap/extension-hard-break';
   import Dropcursor from '@tiptap/extension-dropcursor';
   import Gapcursor from '@tiptap/extension-gapcursor';
@@ -22,11 +29,6 @@
   import { SupabaseProvider } from '$lib/providers/SupabaseProvider.js';
   import { user, authActions } from '$lib/stores/auth.js';
   import { TimelineMark } from '$lib/tiptap/TimelineMark.js';
-  import { ExtendedParagraph } from '$lib/tiptap/ExtendedParagraph.js';
-  import { ExtendedBulletList } from '$lib/tiptap/ExtendedBulletList.js';
-  import { ExtendedTaskList } from '$lib/tiptap/ExtendedTaskList.js';
-  import { ExtendedListItem } from '$lib/tiptap/ExtendedListItem.js';
-  import { ExtendedTaskItem } from '$lib/tiptap/ExtendedTaskItem.js';
   import { BlockInfoDecorator } from '$lib/tiptap/BlockInfoDecorator.js';
   import { TimestampPlugin } from '$lib/tiptap/TimestampPlugin.js';
   import { MarkdownClipboard, serializeToMarkdown } from '$lib/tiptap/MarkdownClipboard.js';
@@ -62,6 +64,7 @@
   // Block management
   let blockStats = { total: 0, byType: {}, withParents: 0, orphaned: 0, timeRange: null };
   let showBlockDebug = false;
+  let debugNewBlocks = false; // Debug flag for new block detection
   
   // Mobile UI state
   let isSearchExpanded = false;
@@ -85,7 +88,6 @@
   
   // Reactive search - trigger immediately when query changes (real-time)
   $: if (searchQuery !== undefined) {
-    console.log('🔍 Search query changed:', searchQuery);
     handleSearch();
   }
   
@@ -450,6 +452,15 @@
         window.debugSearchStore = debugSearchStore;
         window.debugEditorRef = debugEditorRef;
         
+        // Add debug new blocks toggle function
+        window.toggleDebugNewBlocks = () => {
+          debugNewBlocks = !debugNewBlocks;
+          console.log(`🔧 Debug new blocks: ${debugNewBlocks ? 'ENABLED' : 'DISABLED'}`);
+          console.log('   New blocks will be outlined with blue borders');
+          console.log('   Parent blocks will be outlined with dashed blue borders');
+          return debugNewBlocks;
+        };
+        
         // Add TipTap debug functions
         window.debugTipTapTree = () => {
           console.log('🌳 TipTap Document Tree:');
@@ -576,23 +587,10 @@
             return allBlocks;
           }
         };
-        
-        console.log('🛠️ Debug functions added to window:');
-        console.log('  window.debugSearchStore() - Check search store state');
-        console.log('  window.debugEditorRef() - Check editor reference');
-        console.log('  window.debugTipTapTree() - Check TipTap document structure');
-        console.log('  window.debugHierarchy() - Check block hierarchy structure');
-        console.log('  window.debugDOMClasses() - Check DOM elements with .hidden-block');
-        console.log('  window.debugDOMSearch(blockId) - Search DOM for specific block');
-        console.log('  window.debugDecorations() - Check editor decorations');
-        console.log('  window.testHideBlock(blockId) - Manually hide a block');
-        console.log('  window.testClearHiding() - Clear all hiding');
       });
 
       // Initialize streaming search immediately after editor creation
-      console.log('🔍 Initializing streaming search...');
       streamingSearch = new StreamingSearch(editor);
-      console.log('✅ Streaming search initialized:', streamingSearch);
 
     // Add link interaction handlers after editor is created
     setTimeout(() => {
@@ -673,7 +671,10 @@
           editor.commands.focus();
           // Auto-trigger pin button behavior on load with longer delay
           setTimeout(() => {
-            focusAtEnd();
+            // Only scroll to end if document has meaningful content
+            if (hasNonEmptyContent()) {
+              focusAtEnd();
+            }
           }, 50);
         }, 50);
       }
@@ -942,35 +943,50 @@
     return text;
   }
   
-  async function handleSearch() {
-    console.log('🔍 handleSearch called, streamingSearch:', !!streamingSearch, 'editor:', !!editor);
+  // Check if document has meaningful content (not just empty paragraphs)
+  function hasNonEmptyContent() {
+    if (!editor) return false;
     
+    const { doc } = editor.state;
+    let hasContent = false;
+    
+    doc.descendants((node) => {
+      // Check for any non-empty text content
+      if (node.textContent && node.textContent.trim().length > 0) {
+        hasContent = true;
+        return false; // Stop searching
+      }
+      // Check for timeline marks or other meaningful content
+      if (node.marks && node.marks.some(mark => mark.type.name === 'timeline')) {
+        hasContent = true;
+        return false; // Stop searching
+      }
+    });
+    
+    return hasContent;
+  }
+  
+  async function handleSearch() {
     if (!streamingSearch || !editor) {
-      console.log('❌ Missing dependencies - streamingSearch:', !!streamingSearch, 'editor:', !!editor);
+      // console.warn('❌ Missing dependencies - streamingSearch:', !!streamingSearch, 'editor:', !!editor);
       return;
     }
     
     const query = searchQuery.trim();
-    console.log('🔍 Processing search query:', query);
     
     if (query === '') {
       // Empty query - clear search and show all blocks
-      console.log('🧹 Clearing search (empty query)');
       streamingSearch.clearSearch();
       searchProgress = { processed: 0, total: 0, matched: 0, completed: true };
       return;
     }
     
     // Start streaming search
-    console.log('🚀 Starting streaming search for:', query);
     searchProgress = { processed: 0, total: 0, matched: 0, completed: false };
     
     await streamingSearch.streamSearch(query, (progress) => {
-      console.log('📊 Search progress:', progress);
       searchProgress = progress;
     });
-    
-    console.log('✅ Search completed');
   }
   
   function focusAtEnd() {
@@ -1195,16 +1211,12 @@
       }
     };
   }
-</script>
 
-<!-- Development Version Tag -->
-{#if dev}
-  <div class="fixed top-12 right-4 z-[60] pointer-events-none">
-    <div class="bg-purple-600/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded shadow-lg font-mono">
-              cycle-detection-fix
-    </div>
-  </div>
-{/if}
+  // Sync debug flag with global window object
+  $: if (typeof window !== 'undefined') {
+    window.debugNewBlocks = debugNewBlocks;
+  }
+</script>
 
 <!-- Floating Top Controls -->
 <div class="fixed top-4 left-4 right-4 z-50 pointer-events-none">
@@ -1255,11 +1267,11 @@
 </div>
 
 <!-- Add version tag in top-right corner -->
-<div class="fixed top-4 right-4 z-50">
-	<div class="bg-gray-800 text-white text-xs px-2 py-1 rounded-full font-mono">
-		processSubtree-fix
+	<div class="fixed top-4 right-4 z-50">
+		<div class="bg-gray-800 text-white text-xs px-2 py-1 rounded-full font-mono">
+			manual-hover-class
+		</div>
 	</div>
-</div>
 
 <!-- Editor with internal spacing -->
 <div class="bg-white">
@@ -1605,7 +1617,7 @@
 <style>
   :global(:root) {
     --debug-borders: none; /* Change to "1px solid red" to show debug borders */
-    --block-borders: none; /* Change to "1px solid #000" to show block borders */
+    --block-borders: 0.5px solid black; /* Change to "1px solid #000" to show block borders */
     --block-hover-bg: none; /* Change to "rgba(0, 0, 0, 0.02)" to show hover background */
   }
 
@@ -1757,9 +1769,17 @@
     margin-top: -0.1rem !important;
   }
 
-  :global(.block-with-info:hover) {
+  /* Manual hover highlighting with debug-hovered class */
+  :global(.block-with-info.debug-hovered) {
     background-color: var(--block-hover-bg);
-    border-color: #4f46e5; /* Indigo border on hover (only when borders are enabled) */
+    border: 2px solid #f97316 !important; 
+    border-radius: 0.375rem;
+  }
+
+  /* Parent block highlighting with orange 1px border */
+  :global(.block-with-info.parent-highlighted) {
+    border: 4px dashed #f97316; /* Orange 1px border for parent */
+    border-radius: 0.375rem;
   }
 
   /* Block info tooltip styling */
@@ -2012,3 +2032,20 @@
     padding-top: 2.7rem;
   }
 </style>
+
+        <!-- Debug controls for hidden blocks -->
+        {#if dev}
+          <div class="flex flex-col gap-2 p-3 bg-gray-100 border rounded">
+            <div class="text-sm font-medium text-gray-700">Debug Controls</div>
+            
+            <label class="flex items-center gap-2 text-sm">
+              <input type="checkbox" bind:checked={showBlockDebug} class="rounded">
+              Show block debug info
+            </label>
+            
+            <label class="flex items-center gap-2 text-sm">
+              <input type="checkbox" bind:checked={debugNewBlocks} class="rounded">
+              Debug new blocks (blue borders)
+            </label>
+          </div>
+        {/if}

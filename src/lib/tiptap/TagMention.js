@@ -183,7 +183,6 @@ export const TagMention = Mention.extend({
     return {
       // Override Enter key when suggestions are active - HIGHER PRIORITY than default
       'Enter': () => {
-        console.log('🔑 TagMention Enter override - checking suggestion state');
         
         // Check if our suggestion system is active
         const suggestionPlugin = this.editor.view.state.plugins.find(
@@ -192,16 +191,12 @@ export const TagMention = Mention.extend({
         
         if (suggestionPlugin) {
           const suggestionState = suggestionPlugin.getState(this.editor.view.state);
-          console.log('💡 Suggestion state:', suggestionState);
           
           if (suggestionState && suggestionState.active) {
-            console.log('✅ Suggestions active - letting TipTap handle Enter');
-            // Let TipTap's suggestion system handle this
             return false;
           }
         }
         
-        console.log('⏭️ No active suggestions - letting default Enter happen');
         // Not in suggestion mode, let default Enter behavior happen
         return false;
       },

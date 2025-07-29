@@ -10,6 +10,14 @@
   let loading = false;
   let error = '';
   let otpInput;
+  let phoneInput;
+  
+  onMount(() => {
+    // Auto-focus the phone input when page loads
+    if (step === 'phone' && phoneInput) {
+      phoneInput.focus();
+    }
+  });
   
   // Standardize phone number format for consistent user identification
   function standardizePhoneNumber(phone) {
@@ -130,6 +138,7 @@
             <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full border border-gray-200 flex items-center divide-x divide-gray-200" style="height: 40px;">
               <!-- Phone Input -->
               <input
+                bind:this={phoneInput}
                 id="phone"
                 name="phone"
                 type="tel"

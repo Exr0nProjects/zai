@@ -1,2 +1,130 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  html {
+    background: #1a1a1a;
+    color: #e5e5e5;
+  }
+  
+  body {
+    background: #1a1a1a;
+    color: #e5e5e5;
+  }
+  
+  /* Editor styles */
+  .tiptap {
+    background: #1a1a1a !important;
+    color: #e5e5e5 !important;
+  }
+  
+  /* Placeholder text */
+  .tiptap p.is-editor-empty:first-child::before {
+    color: #666 !important;
+  }
+  
+  /* Links */
+  .tiptap a {
+    color: #60a5fa !important;
+  }
+  
+  /* Timeline markers */
+  .timeline-marker {
+    border-color: #3b82f6 !important;
+  }
+  
+  /* Search input */
+  input[type="text"], input[type="url"] {
+    background: #2a2a2a !important;
+    color: #e5e5e5 !important;
+    border-color: #444 !important;
+  }
+  
+  input[type="text"]::placeholder, input[type="url"]::placeholder {
+    color: #666 !important;
+  }
+  
+  /* Buttons and interactive elements */
+  button {
+    background: #2a2a2a !important;
+    color: #e5e5e5 !important;
+    border-color: #444 !important;
+  }
+  
+  button:hover {
+    background: #3a3a3a !important;
+  }
+  
+  /* Debug panels and overlays */
+  .bg-white {
+    background: #2a2a2a !important;
+  }
+  
+  .bg-gray-100 {
+    background: #3a3a3a !important;
+  }
+  
+  .bg-gray-200 {
+    background: #444 !important;
+  }
+  
+  .text-gray-800 {
+    color: #e5e5e5 !important;
+  }
+  
+  .text-gray-600 {
+    color: #a3a3a3 !important;
+  }
+  
+  .text-gray-500 {
+    color: #888 !important;
+  }
+  
+  .border-gray-300 {
+    border-color: #555 !important;
+  }
+  
+  .border-gray-200 {
+    border-color: #444 !important;
+  }
+}
+
+/* Debug styles for new blocks */
+.debug-new-block {
+  border: 1px solid #3b82f6 !important;
+  position: relative;
+}
+
+.debug-new-block::after {
+  content: "NEW";
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #3b82f6;
+  color: white;
+  font-size: 8px;
+  padding: 1px 3px;
+  border-radius: 2px;
+  font-weight: bold;
+  z-index: 10;
+}
+
+.debug-new-block-parent {
+  border: 1px dashed #3b82f6 !important;
+  position: relative;
+}
+
+.debug-new-block-parent::after {
+  content: "PARENT";
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  background: #3b82f6;
+  color: white;
+  font-size: 8px;
+  padding: 1px 3px;
+  border-radius: 2px;
+  font-weight: bold;
+  z-index: 10;
+}
