@@ -1571,7 +1571,27 @@
     width: 100%;
     height: 1px;
     background: #e5e7eb;
-    margin-top: 3rem;
-    margin-bottom: 1rem;
+    margin-top: 1rem;
+    margin-bottom: 0rem;
+    pointer-events: none;
+  }
+  
+  /* Add padding to empty paragraphs that get the line */
+  :global(.ProseMirror > p:not(:has(> br.ProseMirror-trailingBreak:only-child)) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child),
+         .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child)) {
+    padding-top: 1rem;
+    padding-bottom: 0rem;
+  }
+  
+  /* Select element immediately after two empty paragraphs (after the hline) */
+  :global(.ProseMirror > p:not(:has(> br.ProseMirror-trailingBreak:only-child)) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child) + *,
+         .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child) + *) {
+    padding-top: 2.7rem;
   }
 </style>
