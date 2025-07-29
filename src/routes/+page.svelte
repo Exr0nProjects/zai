@@ -48,6 +48,7 @@
   import ZaiLogo from '$lib/components/ZaiLogo.svelte';
   import { searchHiddenBlocks } from '../lib/stores/searchHidden.js';
   import { SearchHighlightPlugin } from '../lib/tiptap/SearchHighlightPlugin.js';
+  import { InlineParser, createParser } from '$lib/tiptap/InlineParser.js';
   
   // Debug flags (change these in code as needed)
   const debugNewBlocks = false; // Set to true to show blue borders on new blocks
@@ -488,6 +489,58 @@
           placeholder: 'What do you think?',
         }),
         SearchHighlightPlugin,
+        InlineParser.configure({
+          enabled: true,
+          debugMode: true, // Set to true for debugging
+          parsers: [
+            // Example date parser - you'll replace with your sophisticated one
+            createParser('dates', (text, context) => {
+              const results = [];
+              
+              // Simple example: find "tomorrow"
+              const tomorrowMatch = text.match(/tomorrow/gi);
+              if (tomorrowMatch) {
+                const start = text.indexOf(tomorrowMatch[0]);
+                const end = start + tomorrowMatch[0].length;
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                
+                results.push({
+                  start,
+                  end,
+                  data: {
+                    date: tomorrow,
+                    originalText: tomorrowMatch[0],
+                    displayText: "Tomorrow"
+                  }
+                });
+              }
+              
+              return results;
+            }, 'dateChip'),
+            
+            // Example tag parser
+            createParser('tags', (text, context) => {
+              const results = [];
+              const tagRegex = /#\w+/g;
+              let match;
+              
+              while ((match = tagRegex.exec(text)) !== null) {
+                results.push({
+                  start: match.index,
+                  end: match.index + match[0].length,
+                  data: {
+                    tagText: match[0],
+                    originalText: match[0]
+                  }
+                });
+              }
+              
+              return results;
+            }, 'tagChip')
+          ],
+          completionChars: [' ', '.', '!', '\n'],
+        }),
       ],
       // No initial content - Y.js will manage document state
     });
@@ -498,6 +551,34 @@
         
         // Add debug functions to global scope for console access
         window.debugSearchStore = debugSearchStore;
+        
+        // Add chip parser debug controls
+        window.toggleChipParser = () => {
+          if (editor) {
+            editor.commands.toggleParsing();
+          }
+        };
+        
+        window.runParsers = () => {
+          if (editor) {
+            editor.commands.runParsers();
+            console.log('🔍 Manually ran parsers');
+          }
+        };
+        
+        window.getParsingContext = () => {
+          if (editor && window.getContext) {
+            const context = window.getContext();
+            console.log('📝 Current context:', context);
+            return context;
+          }
+        };
+        
+        window.toggleChipConversion = () => {
+          if (editor) {
+            editor.commands.toggleChipConversion();
+          }
+        };
         window.debugEditorRef = debugEditorRef;
         
         // Debug new blocks is now a code-only flag (change const debugNewBlocks at top of file)
@@ -1282,10 +1363,11 @@
   </div>
 </div>
 
-<!-- Fixed top-right floating version tag -->
-<div class="fixed top-4 right-4 bg-accent/10 text-accent px-3 py-1 rounded-full text-sm font-medium z-50 select-none">
-	barlow-negative-margin
-</div>
+{#if dev}
+  <div class="fixed top-4 right-4 z-50 bg-accent-light text-white px-2 py-1 rounded text-xs font-mono pointer-events-none">
+    clean-chip-interface
+  </div>
+{/if}
 
 <!-- Editor with internal spacing -->
 <div class="bg-white">
@@ -1395,7 +1477,7 @@
           <button
             on:click={indentList}
             tabindex="-1"
-            class="px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors rounded-l-full"
+            class="px-3 py-3 md:py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors rounded-l-full"
             title="Indent"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1408,7 +1490,7 @@
           <button
             on:click={outdentList}
             tabindex="-1"
-            class="px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            class="px-3 py-3 md:py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors"
             title="Outdent"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1421,7 +1503,7 @@
           <button
             on:click={addTodoList}
             tabindex="-1"
-            class="px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            class="px-3 py-3 md:py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors"
             title="Add Todo List"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1433,7 +1515,7 @@
           <button
             on:click={addLink}
             tabindex="-1"
-            class="px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors rounded-r-full"
+            class="px-3 py-3 md:py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors rounded-r-full"
             title="Add Link"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

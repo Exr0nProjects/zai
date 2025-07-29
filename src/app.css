@@ -5,6 +5,8 @@
 :root {
   --accent-light: #3b82f6;
   --accent-dark: #2563eb;
+  --accent-light-rgb: 59, 130, 246;
+  --accent-dark-rgb: 37, 99, 235;
 }
 
 /* Dark mode support */
@@ -233,4 +235,273 @@
   border-radius: 2px;
   font-weight: bold;
   z-index: 10;
+}
+
+/* Inline parsing styles */
+.inline-date {
+  background-color: rgba(34, 197, 94, 0.1);
+  color: rgb(34, 197, 94);
+  padding: 1px 3px;
+  border-radius: 3px;
+  font-weight: 500;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  transition: all 0.2s ease;
+}
+
+.inline-date:hover {
+  background-color: rgba(34, 197, 94, 0.2);
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
+/* Different styles for different date types */
+.inline-date-numerical-date {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: rgb(59, 130, 246);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.inline-date-numerical-date:hover {
+  background-color: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.inline-date-relative-phrase {
+  background-color: rgba(168, 85, 247, 0.1);
+  color: rgb(168, 85, 247);
+  border-color: rgba(168, 85, 247, 0.3);
+}
+
+.inline-date-relative-phrase:hover {
+  background-color: rgba(168, 85, 247, 0.2);
+  border-color: rgba(168, 85, 247, 0.5);
+}
+
+.inline-date-extended-date {
+  background-color: rgba(245, 158, 11, 0.1);
+  color: rgb(245, 158, 11);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.inline-date-extended-date:hover {
+  background-color: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+/* Inline tag styles */
+.inline-tag {
+  background-color: rgba(var(--accent-light-rgb), 0.1);
+  color: rgb(var(--accent-light-rgb));
+  padding: 1px 3px;
+  border-radius: 3px;
+  font-weight: 500;
+  border: 1px solid rgba(var(--accent-light-rgb), 0.3);
+  transition: all 0.2s ease;
+}
+
+.inline-tag:hover {
+  background-color: rgba(var(--accent-light-rgb), 0.2);
+  border-color: rgba(var(--accent-light-rgb), 0.5);
+}
+
+/* Dark mode for inline parsing */
+@media (prefers-color-scheme: dark) {
+  .inline-date {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: rgb(74, 222, 128);
+    border-color: rgba(34, 197, 94, 0.4);
+  }
+
+  .inline-date:hover {
+    background-color: rgba(34, 197, 94, 0.25);
+    border-color: rgba(34, 197, 94, 0.6);
+  }
+
+  .inline-date-numerical-date {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: rgb(96, 165, 250);
+    border-color: rgba(59, 130, 246, 0.4);
+  }
+
+  .inline-date-numerical-date:hover {
+    background-color: rgba(59, 130, 246, 0.25);
+    border-color: rgba(59, 130, 246, 0.6);
+  }
+
+  .inline-date-relative-phrase {
+    background-color: rgba(168, 85, 247, 0.15);
+    color: rgb(196, 181, 253);
+    border-color: rgba(168, 85, 247, 0.4);
+  }
+
+  .inline-date-relative-phrase:hover {
+    background-color: rgba(168, 85, 247, 0.25);
+    border-color: rgba(168, 85, 247, 0.6);
+  }
+
+  .inline-date-extended-date {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: rgb(251, 191, 36);
+    border-color: rgba(245, 158, 11, 0.4);
+  }
+
+  .inline-date-extended-date:hover {
+    background-color: rgba(245, 158, 11, 0.25);
+    border-color: rgba(245, 158, 11, 0.6);
+  }
+
+  .inline-tag {
+    background-color: rgba(var(--accent-dark-rgb), 0.15);
+    color: rgb(var(--accent-dark-rgb));
+    border-color: rgba(var(--accent-dark-rgb), 0.4);
+  }
+
+  .inline-tag:hover {
+    background-color: rgba(var(--accent-dark-rgb), 0.25);
+    border-color: rgba(var(--accent-dark-rgb), 0.6);
+  }
+}
+
+/* Chip styles (converted from marks) */
+.date-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  margin: 0 2px;
+  transition: all 0.2s ease;
+  border: 1px solid;
+}
+
+.date-chip-date-keyword {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: rgb(34, 197, 94);
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+.date-chip-numerical-date {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: rgb(59, 130, 246);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.date-chip-relative-phrase {
+  background-color: rgba(168, 85, 247, 0.15);
+  color: rgb(168, 85, 247);
+  border-color: rgba(168, 85, 247, 0.4);
+}
+
+.date-chip-extended-date {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: rgb(245, 158, 11);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  margin: 0 2px;
+  transition: all 0.2s ease;
+  background-color: rgba(var(--accent-light-rgb), 0.15);
+  color: rgb(var(--accent-light-rgb));
+  border: 1px solid rgba(var(--accent-light-rgb), 0.4);
+}
+
+/* Hover effects for chips */
+.date-chip:hover,
+.tag-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.date-chip-date-keyword:hover {
+  background-color: rgba(34, 197, 94, 0.25);
+  border-color: rgba(34, 197, 94, 0.6);
+}
+
+.date-chip-numerical-date:hover {
+  background-color: rgba(59, 130, 246, 0.25);
+  border-color: rgba(59, 130, 246, 0.6);
+}
+
+.date-chip-relative-phrase:hover {
+  background-color: rgba(168, 85, 247, 0.25);
+  border-color: rgba(168, 85, 247, 0.6);
+}
+
+.date-chip-extended-date:hover {
+  background-color: rgba(245, 158, 11, 0.25);
+  border-color: rgba(245, 158, 11, 0.6);
+}
+
+.tag-chip:hover {
+  background-color: rgba(var(--accent-light-rgb), 0.25);
+  border-color: rgba(var(--accent-light-rgb), 0.6);
+}
+
+/* Dark mode for chips */
+@media (prefers-color-scheme: dark) {
+  .date-chip-date-keyword {
+    background-color: rgba(34, 197, 94, 0.2);
+    color: rgb(74, 222, 128);
+    border-color: rgba(34, 197, 94, 0.5);
+  }
+
+  .date-chip-numerical-date {
+    background-color: rgba(59, 130, 246, 0.2);
+    color: rgb(96, 165, 250);
+    border-color: rgba(59, 130, 246, 0.5);
+  }
+
+  .date-chip-relative-phrase {
+    background-color: rgba(168, 85, 247, 0.2);
+    color: rgb(196, 181, 253);
+    border-color: rgba(168, 85, 247, 0.5);
+  }
+
+  .date-chip-extended-date {
+    background-color: rgba(245, 158, 11, 0.2);
+    color: rgb(251, 191, 36);
+    border-color: rgba(245, 158, 11, 0.5);
+  }
+
+  .tag-chip {
+    background-color: rgba(var(--accent-dark-rgb), 0.2);
+    color: rgb(var(--accent-dark-rgb));
+    border-color: rgba(var(--accent-dark-rgb), 0.5);
+  }
+
+  .date-chip-date-keyword:hover {
+    background-color: rgba(34, 197, 94, 0.3);
+    border-color: rgba(34, 197, 94, 0.7);
+  }
+
+  .date-chip-numerical-date:hover {
+    background-color: rgba(59, 130, 246, 0.3);
+    border-color: rgba(59, 130, 246, 0.7);
+  }
+
+  .date-chip-relative-phrase:hover {
+    background-color: rgba(168, 85, 247, 0.3);
+    border-color: rgba(168, 85, 247, 0.7);
+  }
+
+  .date-chip-extended-date:hover {
+    background-color: rgba(245, 158, 11, 0.3);
+    border-color: rgba(245, 158, 11, 0.7);
+  }
+
+  .tag-chip:hover {
+    background-color: rgba(var(--accent-dark-rgb), 0.3);
+    border-color: rgba(var(--accent-dark-rgb), 0.7);
+  }
 }
