@@ -914,7 +914,7 @@
 {#if dev}
   <div class="fixed top-4 right-4 z-[60] pointer-events-none">
     <div class="bg-purple-600/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded shadow-lg font-mono">
-      THREE-BLOCK-SEP
+      PILL-LOGIN-PIN
     </div>
   </div>
 {/if}
@@ -956,7 +956,12 @@
       <!-- Zai with online indicator -->
       <div class="opacity-10 hover:opacity-100 transition-opacity duration-200">
         <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2 flex items-center space-x-2">
-          <div class="text-sm text-gray-600 font-light tracking-wide">zai</div>
+          <div class="text-sm text-gray-600 font-light tracking-wide flex items-center">
+            za<svg class="w-3 h-3 mx-0.5" fill="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="6" r="3" />
+              <path d="M12 9L12 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
+          </div>
           <div 
             class="w-1.5 h-1.5 rounded-full {isOnline ? 'bg-green-500' : 'bg-gray-300'} transition-colors duration-200"
             title={isOnline ? 'Online' : 'Offline'}
@@ -1052,35 +1057,29 @@
         
         <!-- Tool Bar (Long Pill) -->
         <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full border border-gray-200 flex items-center divide-x divide-gray-200">
-          <!-- Outdent -->
-          <button
-            on:click={outdentList}
-            tabindex="-1"
-            class="px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors rounded-l-full"
-            title="Outdent"
-          >
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
-              <!-- Two lines representing text, first line normal -->
-              <rect x="2" y="3" width="10" height="1.5" rx="0.5"/>
-              <rect x="2" y="7" width="12" height="1.5" rx="0.5"/>
-              <!-- Small left chevron to show outdenting -->
-              <path d="M1 5.5l1.5-1.5L1 2.5v3z" fill="currentColor"/>
-            </svg>
-          </button>
-          
           <!-- Indent -->
           <button
             on:click={indentList}
             tabindex="-1"
-            class="px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            class="px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors rounded-l-full"
             title="Indent"
           >
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
-              <!-- Two lines representing text, first line indented -->
-              <rect x="4" y="3" width="10" height="1.5" rx="0.5"/>
-              <rect x="2" y="7" width="12" height="1.5" rx="0.5"/>
-              <!-- Small right chevron to show indenting -->
-              <path d="M2.5 2.5L4 4 2.5 5.5V2.5z" fill="currentColor"/>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m15 18 6-6-6-6"/>
+            </svg>
+          </button>
+          
+          <!-- Outdent -->
+          <button
+            on:click={outdentList}
+            tabindex="-1"
+            class="px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            title="Outdent"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m15 18-6-6 6-6"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18-6-6 6-6"/>
             </svg>
           </button>
           
@@ -1352,7 +1351,7 @@
     padding: 0.5rem;
     border-radius: 0.375rem;
     font-size: 0.75rem;
-    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    font-family: 'Barlow', sans-serif;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     pointer-events: none;
     white-space: nowrap;
