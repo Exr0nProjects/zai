@@ -34,7 +34,6 @@
   import ListKeymap from '@tiptap/extension-list-keymap';
   import Link from '@tiptap/extension-link';
   import BubbleMenu from '@tiptap/extension-bubble-menu';
-  import { initializeSnowflakeGenerator } from '$lib/utils/snowflake.js';
   import { getAllBlocks, sortBlocksByTimestamp, getBlockStats } from '$lib/utils/blockSorting.js';
   import { TagMention } from '$lib/tiptap/TagMention.js';
   import { TagParser } from '$lib/tiptap/TagParser.js';
@@ -313,10 +312,6 @@
   })();
   
   onMount(() => {
-    // Initialize snowflake generator with user ID (if available)
-    const userId = $user?.id ? parseInt($user.id.slice(-8), 16) : 0;
-    initializeSnowflakeGenerator(userId);
-    
     // Check online status
     isOnline = navigator.onLine;
     
@@ -546,10 +541,47 @@
           return editor.view?.decorations;
         };
         
+        // Debug hierarchy
+        window.debugHierarchy = () => {
+          console.log('🌳 Block Hierarchy:');
+          const allBlocks = [];
+          editor.state.doc.descendants((node, pos) => {
+            if (node.attrs && node.attrs.blockId) {
+              allBlocks.push({
+                blockId: node.attrs.blockId,
+                nodeType: node.type.name,
+                parentId: node.attrs.parentId,
+                content: (node.textContent || '[empty]').substring(0, 30) + '...',
+                pos: pos
+              });
+            }
+          });
+          
+          // Use streamingSearch to build hierarchy if available
+          if (streamingSearch) {
+            const hierarchy = streamingSearch.buildHierarchy(allBlocks);
+            console.log('Built hierarchy:', hierarchy);
+            
+            const printNode = (node, indent = '') => {
+              console.log(indent + `${node.block.nodeType}[${node.block.blockId}]: "${node.block.content || ''}"`);
+              if (node.children && node.children.length > 0) {
+                node.children.forEach(child => printNode(child, indent + '  '));
+              }
+            };
+            
+            hierarchy.forEach(rootNode => printNode(rootNode));
+            return hierarchy;
+          } else {
+            console.log('Raw blocks (streamingSearch not available):', allBlocks);
+            return allBlocks;
+          }
+        };
+        
         console.log('🛠️ Debug functions added to window:');
         console.log('  window.debugSearchStore() - Check search store state');
         console.log('  window.debugEditorRef() - Check editor reference');
         console.log('  window.debugTipTapTree() - Check TipTap document structure');
+        console.log('  window.debugHierarchy() - Check block hierarchy structure');
         console.log('  window.debugDOMClasses() - Check DOM elements with .hidden-block');
         console.log('  window.debugDOMSearch(blockId) - Search DOM for specific block');
         console.log('  window.debugDecorations() - Check editor decorations');
@@ -1169,7 +1201,7 @@
 {#if dev}
   <div class="fixed top-12 right-4 z-[60] pointer-events-none">
     <div class="bg-purple-600/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded shadow-lg font-mono">
-              debug-tools-ready
+              cycle-detection-fix
     </div>
   </div>
 {/if}
@@ -1220,6 +1252,13 @@
       </div>
     </div>
   </div>
+</div>
+
+<!-- Add version tag in top-right corner -->
+<div class="fixed top-4 right-4 z-50">
+	<div class="bg-gray-800 text-white text-xs px-2 py-1 rounded-full font-mono">
+		processSubtree-fix
+	</div>
 </div>
 
 <!-- Editor with internal spacing -->
