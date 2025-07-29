@@ -84,89 +84,28 @@
   // Reactive current link URL that updates when trigger changes
   $: currentLinkUrl = linkRefreshTrigger >= 0 ? getCurrentLinkUrl() : '';
   
-  // Reactive search - trigger when query changes
+  // Reactive search - trigger immediately when query changes (real-time)
   $: if (searchQuery !== undefined) {
-    // Debounce the search to avoid overwhelming the system
-    clearTimeout(window.searchTimeout);
-    window.searchTimeout = setTimeout(() => {
-      handleSearch();
-    }, 300); // 300ms debounce
+    console.log('🔍 Search query changed:', searchQuery);
+    handleSearch();
   }
   
   // Toggle hiding alternate blocks for testing
   function toggleHideAlternateBlocks() {
-    console.log('🔘 Toggle button clicked, current state:', isHidingAlternateBlocks);
-    
-    if (!editor) {
-      console.log('❌ No editor found');
-      return;
-    }
-
-    // Check if commands are available
-    console.log('🔍 Available commands:', {
-      hideBlock: typeof editor.commands.hideBlock,
-      showAllBlocks: typeof editor.commands.showAllBlocks,
-      toggleBlockVisibility: typeof editor.commands.toggleBlockVisibility
-    });
+    if (!editor) return;
     
     if (isHidingAlternateBlocks) {
-      // Show all blocks
-      console.log('👁️ Showing all blocks');
-      const result = editor.commands.showAllBlocks();
-      console.log('showAllBlocks result:', result);
+      editor.commands.showAllBlocks();
       isHidingAlternateBlocks = false;
     } else {
-      // Debug: See what's actually in the document
-      const allNodes = [];
-      editor.state.doc.descendants((node, pos) => {
-        allNodes.push({
-          type: node.type.name,
-          attrs: node.attrs,
-          content: node.textContent?.slice(0, 50) || '',
-          pos
-        });
+      const blocks = getAllBlocks(editor);
+      blocks.forEach((block, index) => {
+        if (index % 2 === 1) {
+          editor.commands.hideBlock(block.blockId);
+        }
       });
-      console.log('📄 All nodes in document:', allNodes);
-      
-      // Hide every other block
-      const blocks = getAllBlocks(editor.state.doc);
-      console.log('📦 Found blocks with blockId+createdAt:', blocks.length, blocks);
-      
-      // If no timestamped blocks, try hiding any block-level nodes
-      if (blocks.length === 0) {
-        console.log('🔄 No timestamped blocks found, trying all block-level nodes...');
-        let blockIndex = 0;
-        editor.state.doc.descendants((node, pos) => {
-          // Hide block-level nodes (not text nodes)
-          if (node.isBlock && node.type.name !== 'doc') {
-            if (blockIndex % 2 === 1) {
-              console.log(`🫥 Hiding node ${blockIndex}:`, node.type.name, 'at pos', pos);
-              // For nodes without blockId, use position as identifier
-              const result = editor.view.dispatch(
-                editor.state.tr.setNodeMarkup(pos, undefined, { 
-                  ...node.attrs, 
-                  hidden: true 
-                })
-              );
-              console.log('Manual hide result:', !!result);
-            }
-            blockIndex++;
-          }
-        });
-      } else {
-        // Use timestamped blocks
-        blocks.forEach((block, index) => {
-          if (index % 2 === 1) { // Hide odd-indexed blocks (every other)
-            console.log(`🫥 Hiding block ${index}:`, block.blockId, block.nodeType);
-            const result = editor.commands.hideBlock(block.blockId);
-            console.log('hideBlock result:', result);
-          }
-        });
-      }
       isHidingAlternateBlocks = true;
     }
-    
-    console.log('🔄 New state:', isHidingAlternateBlocks);
   }
 
   // Get current link URL from DOM
@@ -523,6 +462,11 @@
       // No initial content - Y.js will manage document state
     });
 
+    // Initialize streaming search immediately after editor creation
+    console.log('🔍 Initializing streaming search...');
+    streamingSearch = new StreamingSearch(editor, HiddenBlocksPlugin);
+    console.log('✅ Streaming search initialized:', streamingSearch);
+
     // Add link interaction handlers after editor is created
     setTimeout(() => {
       if (editor && editor.view.dom) {
@@ -596,9 +540,6 @@
       if (ydoc.getMap('config').get('initialContentLoaded') !== true && editor) {
         ydoc.getMap('config').set('initialContentLoaded', true);
         editor.commands.setContent(getInitialContent());
-        
-        // Initialize streaming search
-        streamingSearch = new StreamingSearch(editor, HiddenBlocksPlugin);
         
         // Focus the editor after initialization (TimestampPlugin will handle IDs automatically)
         setTimeout(() => {
@@ -697,7 +638,6 @@
   onDestroy(() => {
     // Clear timeouts
     clearTimeout(window.tagExtractionTimeout);
-    clearTimeout(window.searchTimeout);
     
     // Cleanup tag manager
     tagManager.destroy();
@@ -805,7 +745,6 @@
       pos += node.nodeSize;
     });
     
-    console.log('Title debug - cursor at:', cursorPos, 'total nodes:', nodePositions.length);
     
     if (nodePositions.length === 0) return null;
     
@@ -819,7 +758,6 @@
       }
     }
     
-    console.log('Title debug - current node index:', currentNodeIndex);
     
     // Check if cursor is on an empty line - if so, start from the line above
     let startIndex = currentNodeIndex;
@@ -829,7 +767,6 @@
     
     if (currentIsEmpty) {
       startIndex = currentNodeIndex - 1;
-      console.log('Title debug - cursor on empty line, starting search from index:', startIndex);
     }
     
     // Work backwards from start position to find section boundary
@@ -842,7 +779,6 @@
       const text = serializeToMarkdown([nodeData.node]).trim();
       const isEmpty = text === '';
       
-      console.log('Title debug - checking node', i, 'isEmpty:', isEmpty, 'text:', text.slice(0, 20));
       
       if (isEmpty) {
         emptyCount++;
@@ -850,7 +786,6 @@
         // Found non-empty node
         if (emptyCount >= 2) {
           // We found 2+ empty lines above this non-empty node (end of previous section)
-          console.log('Title debug - found section boundary at index:', i, 'after', emptyCount, 'empty lines');
           foundSectionBoundary = true;
           
           // Now go forward to find the actual start of current section (after the empty lines)
@@ -860,7 +795,6 @@
             
             if (nextText !== '') {
               actualSectionStartIndex = j;
-              console.log('Title debug - actual section starts at index:', j);
               break;
             }
           }
@@ -872,35 +806,44 @@
     
     // If no section with 2+ empty lines above, don't show title
     if (!foundSectionBoundary || actualSectionStartIndex === null) {
-      console.log('Title debug - no valid section found');
       return null;
     }
     
     // Return the first line of the current section
     const nodeData = nodePositions[actualSectionStartIndex];
     const text = serializeToMarkdown([nodeData.node]).trim();
-    console.log('Title debug - returning first line of current section:', text);
     return text;
   }
   
   async function handleSearch() {
-    if (!streamingSearch || !editor) return;
+    console.log('🔍 handleSearch called, streamingSearch:', !!streamingSearch, 'editor:', !!editor);
+    
+    if (!streamingSearch || !editor) {
+      console.log('❌ Missing dependencies - streamingSearch:', !!streamingSearch, 'editor:', !!editor);
+      return;
+    }
     
     const query = searchQuery.trim();
+    console.log('🔍 Processing search query:', query);
     
     if (query === '') {
       // Empty query - clear search and show all blocks
+      console.log('🧹 Clearing search (empty query)');
       streamingSearch.clearSearch();
       searchProgress = { processed: 0, total: 0, matched: 0, completed: true };
       return;
     }
     
     // Start streaming search
+    console.log('🚀 Starting streaming search for:', query);
     searchProgress = { processed: 0, total: 0, matched: 0, completed: false };
     
     await streamingSearch.streamSearch(query, (progress) => {
+      console.log('📊 Search progress:', progress);
       searchProgress = progress;
     });
+    
+    console.log('✅ Search completed');
   }
   
   function focusAtEnd() {
@@ -1131,7 +1074,7 @@
 {#if dev}
   <div class="fixed top-12 right-4 z-[60] pointer-events-none">
     <div class="bg-purple-600/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded shadow-lg font-mono">
-              search-streaming-ready
+              search-redesigned-v2
     </div>
   </div>
 {/if}

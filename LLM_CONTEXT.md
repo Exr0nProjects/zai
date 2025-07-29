@@ -103,13 +103,14 @@ Notes from LLM agents:
 (agent:contenteditable-basics) ✅ **Mobile-Optimized**: Apple PWA meta tags and mobile-specific configurations
 
 ## Search System
-(agent:search) **Streaming Search**: Implemented non-blocking O(N) search system that uses hidden blocks to progressively filter document content
-(agent:search) **Bidirectional Search**: Search starts from present time and works both backwards (older blocks) and forwards (newer blocks) to prioritize recent content
+(agent:search) **Redesigned Search Architecture**: Completely redesigned with simpler, more reliable approach - for any query, determines desired visibility state for ALL blocks and sets each block to that state
+(agent:search) **Real-time & Case Insensitive**: Search triggers immediately on typing with full case insensitive matching (both query and content converted to lowercase)
 (agent:search) **Word Matching**: Space-separated search terms require ALL words to be present in block content (order doesn't matter)
-(agent:search) **Progressive Hiding**: Blocks are hidden immediately as they're processed, providing instant visual feedback during search
-(agent:search) **Search Progress**: Real-time progress indicator shows matches found and percentage complete during streaming search
-(agent:search) **Debounced Input**: 300ms debounce prevents overwhelming the system with rapid typing, automatically triggers search on query changes
-(agent:search) **Graceful Cleanup**: Search properly aborts previous operations and cleans up hidden state when query changes or component unmounts
+(agent:search) **Bidirectional Processing**: Processes blocks starting from present time working backwards/forwards, prioritizing recent content
+(agent:search) **No Flashing**: TipTap's hidden blocks system only changes DOM for blocks that actually need state changes, eliminating visual flashing
+(agent:search) **Expanding Query Support**: When deleting characters (making query broader), previously hidden blocks that now match become visible again
+(agent:search) **Stream Processing**: Processes blocks in chunks with yield points to avoid blocking UI during large document search
+(agent:search) **Clean State Management**: Simple approach eliminates complex state tracking - just determines what each block's visibility should be and sets it
 
 ## Next Steps
 (agent:contenteditable-basics) Implement awareness for cursor positions and user presence indicators

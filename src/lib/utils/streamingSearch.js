@@ -1,5 +1,5 @@
 // Streaming search system for timeline-based document filtering
-// Uses hidden blocks system to progressively hide non-matching blocks
+// Uses hidden blocks system to show/hide blocks based on search query
 
 export class StreamingSearch {
   constructor(editor, hiddenBlocksPlugin) {
@@ -8,10 +8,9 @@ export class StreamingSearch {
     this.isSearching = false;
     this.searchAbortController = null;
     this.currentQuery = '';
-    this.hiddenBlockIds = new Set();
   }
 
-  // Parse search query into individual words (space-separated)
+  // Parse search query into individual words (space-separated, case insensitive)
   parseQuery(query) {
     return query.toLowerCase()
       .trim()
@@ -21,7 +20,7 @@ export class StreamingSearch {
 
   // Check if a block's text content matches all query words
   blockMatches(block, queryWords) {
-    if (queryWords.length === 0) return true;
+    if (queryWords.length === 0) return true; // Empty query matches everything
     
     const blockText = block.content.toLowerCase();
     return queryWords.every(word => blockText.includes(word));
@@ -69,30 +68,34 @@ export class StreamingSearch {
     return blocks;
   }
 
-  // Stream search with progressive hiding
+  // Main search function - determines desired visibility for all blocks and sets it
   async streamSearch(query, onProgress = null) {
-    // Clear any existing search
-    this.clearSearch();
+    console.log('🔍 StreamingSearch.streamSearch called with query:', query);
+    
+    // Abort any existing search
+    if (this.searchAbortController) {
+      this.searchAbortController.abort();
+    }
     
     // Parse query
     const queryWords = this.parseQuery(query);
-    if (queryWords.length === 0) {
-      // Empty query - show all blocks
-      this.showAllBlocks();
-      return;
-    }
-
+    console.log('🔍 Parsed query words:', queryWords);
+    
     this.isSearching = true;
     this.currentQuery = query;
     this.searchAbortController = new AbortController();
-    this.hiddenBlockIds.clear();
 
     try {
       // Get all blocks
       const allBlocks = this.getAllBlocks();
-      if (allBlocks.length === 0) return;
+      console.log('📦 Found blocks:', allBlocks.length);
+      
+      if (allBlocks.length === 0) {
+        console.log('❌ No blocks found, returning');
+        return;
+      }
 
-      // Sort blocks by distance from current time (bidirectional search)
+      // Sort blocks by distance from current time (process closest to "now" first)
       const currentTime = this.getCurrentTimestamp();
       const sortedBlocks = this.sortBlocksByTimeDistance(allBlocks, currentTime);
 
@@ -104,25 +107,29 @@ export class StreamingSearch {
       for (let i = 0; i < sortedBlocks.length; i += chunkSize) {
         // Check if search was aborted
         if (this.searchAbortController.signal.aborted) {
+          console.log('🛑 Search aborted');
           break;
         }
 
         const chunk = sortedBlocks.slice(i, i + chunkSize);
         
-        // Process chunk
+        // Process chunk - determine desired visibility for each block
         for (const block of chunk) {
           if (this.searchAbortController.signal.aborted) {
             break;
           }
 
-          const matches = this.blockMatches(block, queryWords);
+          const shouldBeVisible = this.blockMatches(block, queryWords);
           
-          if (!matches) {
-            // Hide block immediately
-            this.hideBlock(block.blockId);
-            this.hiddenBlockIds.add(block.blockId);
-          } else {
+          if (shouldBeVisible) {
+            // Block should be visible - ensure it's shown
+            this.showBlock(block.blockId);
             matchedCount++;
+            console.log('✅ Block should be visible:', block.blockId);
+          } else {
+            // Block should be hidden - ensure it's hidden
+            this.hideBlock(block.blockId);
+            console.log('🙈 Block should be hidden:', block.blockId);
           }
           
           processedCount++;
@@ -153,6 +160,8 @@ export class StreamingSearch {
         });
       }
 
+      console.log('✅ Search completed - matched:', matchedCount, 'total:', sortedBlocks.length);
+
     } catch (error) {
       console.error('Search error:', error);
     } finally {
@@ -169,25 +178,38 @@ export class StreamingSearch {
     }
   }
 
-  // Show all blocks (clear search)
-  showAllBlocks() {
+  // Show a specific block
+  showBlock(blockId) {
     if (this.editor && this.editor.commands) {
-      this.editor.commands.showAllBlocks();
+      this.editor.commands.showBlock(blockId);
     }
-    this.hiddenBlockIds.clear();
   }
 
-  // Clear current search
+  // Show all blocks (used when clearing search)
+  showAllBlocks() {
+    console.log('👁️ StreamingSearch.showAllBlocks called');
+    
+    if (this.editor && this.editor.commands) {
+      const result = this.editor.commands.showAllBlocks();
+      console.log('👁️ showAllBlocks command result:', result);
+    }
+    
+    console.log('✅ All blocks should now be visible');
+  }
+
+  // Clear current search and show all blocks
   clearSearch() {
+    console.log('🧹 StreamingSearch.clearSearch called');
+    
     if (this.searchAbortController) {
       this.searchAbortController.abort();
     }
     
-    if (this.isSearching) {
-      this.showAllBlocks();
-      this.isSearching = false;
-      this.currentQuery = '';
-    }
+    this.showAllBlocks();
+    this.isSearching = false;
+    this.currentQuery = '';
+    
+    console.log('✅ Search cleared, all blocks should be visible');
   }
 
   // Check if currently searching
@@ -198,11 +220,6 @@ export class StreamingSearch {
   // Get current search query
   getCurrentQuery() {
     return this.currentQuery;
-  }
-
-  // Get count of hidden blocks
-  getHiddenBlockCount() {
-    return this.hiddenBlockIds.size;
   }
 
   // Destroy the search instance
