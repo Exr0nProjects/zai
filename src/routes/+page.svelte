@@ -42,6 +42,7 @@
   import { KeyboardNavigation } from '$lib/tiptap/KeyboardNavigationPlugin.js';
   import { HiddenBlocksPlugin } from '$lib/tiptap/HiddenBlocksPlugin.js';
   import { tagManager, isTagProcessing, tagStats } from '$lib/utils/tagManager.js';
+  import { StreamingSearch } from '$lib/utils/streamingSearch.js';
   import { dev } from '$app/environment';
   import ZaiLogo from '$lib/components/ZaiLogo.svelte';
   
@@ -51,6 +52,10 @@
   let searchQuery = '';
   let editor;
   let element;
+  
+  // Streaming search
+  let streamingSearch = null;
+  let searchProgress = { processed: 0, total: 0, matched: 0, completed: false };
   
   // Simple timeline management
   let timelinePosition = null;
@@ -78,6 +83,15 @@
   
   // Reactive current link URL that updates when trigger changes
   $: currentLinkUrl = linkRefreshTrigger >= 0 ? getCurrentLinkUrl() : '';
+  
+  // Reactive search - trigger when query changes
+  $: if (searchQuery !== undefined) {
+    // Debounce the search to avoid overwhelming the system
+    clearTimeout(window.searchTimeout);
+    window.searchTimeout = setTimeout(() => {
+      handleSearch();
+    }, 300); // 300ms debounce
+  }
   
   // Toggle hiding alternate blocks for testing
   function toggleHideAlternateBlocks() {
@@ -583,6 +597,9 @@
         ydoc.getMap('config').set('initialContentLoaded', true);
         editor.commands.setContent(getInitialContent());
         
+        // Initialize streaming search
+        streamingSearch = new StreamingSearch(editor, HiddenBlocksPlugin);
+        
         // Focus the editor after initialization (TimestampPlugin will handle IDs automatically)
         setTimeout(() => {
           editor.commands.focus();
@@ -680,9 +697,15 @@
   onDestroy(() => {
     // Clear timeouts
     clearTimeout(window.tagExtractionTimeout);
+    clearTimeout(window.searchTimeout);
     
     // Cleanup tag manager
     tagManager.destroy();
+    
+    // Cleanup streaming search
+    if (streamingSearch) {
+      streamingSearch.destroy();
+    }
     
     if (editor) {
       editor.destroy();
@@ -860,18 +883,24 @@
     return text;
   }
   
-  function handleSearch() {
-    if (searchQuery.trim() && editor) {
-      // Simple text search within editor
-      const content = editor.getText();
-      const searchIndex = content.toLowerCase().indexOf(searchQuery.toLowerCase());
-      
-      if (searchIndex !== -1) {
-        // Focus editor and try to position cursor near found text
-        editor.commands.focus();
-        // Note: More sophisticated search/highlight would require additional extensions
-      }
+  async function handleSearch() {
+    if (!streamingSearch || !editor) return;
+    
+    const query = searchQuery.trim();
+    
+    if (query === '') {
+      // Empty query - clear search and show all blocks
+      streamingSearch.clearSearch();
+      searchProgress = { processed: 0, total: 0, matched: 0, completed: true };
+      return;
     }
+    
+    // Start streaming search
+    searchProgress = { processed: 0, total: 0, matched: 0, completed: false };
+    
+    await streamingSearch.streamSearch(query, (progress) => {
+      searchProgress = progress;
+    });
   }
   
   function focusAtEnd() {
@@ -1102,7 +1131,7 @@
 {#if dev}
   <div class="fixed top-12 right-4 z-[60] pointer-events-none">
     <div class="bg-purple-600/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded shadow-lg font-mono">
-              hidden-blocks-v3
+              search-streaming-ready
     </div>
   </div>
 {/if}
@@ -1194,6 +1223,11 @@
             on:keypress={(e) => e.key === 'Enter' && handleSearch()}
             on:blur={() => isSearchExpanded = false}
           />
+          {#if searchQuery && !searchProgress.completed && searchProgress.total > 0}
+            <div class="absolute bottom-[-20px] right-0 text-xs text-gray-500">
+              {searchProgress.matched} matches ({Math.round((searchProgress.processed / searchProgress.total) * 100)}%)
+            </div>
+          {/if}
           <button
             on:click={handleSearch}
             class="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-500 hover:text-blue-600 transition-colors"
@@ -1228,6 +1262,11 @@
             class="hidden md:block w-full bg-white/90 backdrop-blur-md shadow-lg rounded-full pl-4 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all border border-gray-200"
             on:keypress={(e) => e.key === 'Enter' && handleSearch()}
           />
+          {#if searchQuery && !searchProgress.completed && searchProgress.total > 0}
+            <div class="hidden md:block absolute bottom-[-18px] right-0 text-xs text-gray-500">
+              {searchProgress.matched} matches ({Math.round((searchProgress.processed / searchProgress.total) * 100)}%)
+            </div>
+          {/if}
           <button
             on:click={handleSearch}
             class="hidden md:block absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-500 hover:text-blue-600 transition-colors"
@@ -1500,7 +1539,7 @@
 <style>
   :global(:root) {
     --debug-borders: none; /* Change to "1px solid red" to show debug borders */
-    --block-borders: 1px solid black; /* Change to "1px solid #000" to show block borders */
+    --block-borders: none; /* Change to "1px solid #000" to show block borders */
     --block-hover-bg: none; /* Change to "rgba(0, 0, 0, 0.02)" to show hover background */
   }
 

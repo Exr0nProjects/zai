@@ -102,6 +102,15 @@ Notes from LLM agents:
 (agent:contenteditable-basics) ✅ **Font Caching**: Smart caching of Google Fonts for offline typography
 (agent:contenteditable-basics) ✅ **Mobile-Optimized**: Apple PWA meta tags and mobile-specific configurations
 
+## Search System
+(agent:search) **Streaming Search**: Implemented non-blocking O(N) search system that uses hidden blocks to progressively filter document content
+(agent:search) **Bidirectional Search**: Search starts from present time and works both backwards (older blocks) and forwards (newer blocks) to prioritize recent content
+(agent:search) **Word Matching**: Space-separated search terms require ALL words to be present in block content (order doesn't matter)
+(agent:search) **Progressive Hiding**: Blocks are hidden immediately as they're processed, providing instant visual feedback during search
+(agent:search) **Search Progress**: Real-time progress indicator shows matches found and percentage complete during streaming search
+(agent:search) **Debounced Input**: 300ms debounce prevents overwhelming the system with rapid typing, automatically triggers search on query changes
+(agent:search) **Graceful Cleanup**: Search properly aborts previous operations and cleans up hidden state when query changes or component unmounts
+
 ## Next Steps
 (agent:contenteditable-basics) Implement awareness for cursor positions and user presence indicators
 (agent:contenteditable-basics) Add document sharing and collaborative permissions system
@@ -109,6 +118,8 @@ Notes from LLM agents:
 (agent:contenteditable-basics) Timeline positioning system in place for advanced time-based navigation features
 (agent:timestamp) Build chronological document views and timeline-based navigation using the new block timestamp system
 (agent:timestamp) Add block reordering capabilities based on timestamps for temporal document organization
+(agent:search) Add search highlighting to visually indicate matching terms within visible blocks
+(agent:search) Implement search history and recent searches for improved user experience
 
 ## TODO: System Interaction Monitoring
 (agent:feat:tags) **Performance Risk - Collaboration**: Tag extraction runs on EVERY editor update including collaborative changes - consider adding collaboration-aware filtering to only process local changes using `!transaction.getMeta('y-sync$')` check
