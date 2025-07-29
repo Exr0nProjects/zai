@@ -8,10 +8,10 @@
   import Italic from '@tiptap/extension-italic';
   import Code from '@tiptap/extension-code';
   import Strike from '@tiptap/extension-strike';
-  import Blockquote from '@tiptap/extension-blockquote';
-  import HorizontalRule from '@tiptap/extension-horizontal-rule';
-  import OrderedList from '@tiptap/extension-ordered-list';
-  import CodeBlock from '@tiptap/extension-code-block';
+  import { ExtendedBlockquote } from '$lib/tiptap/ExtendedBlockquote.js';
+  import { ExtendedHorizontalRule } from '$lib/tiptap/ExtendedHorizontalRule.js';
+  import { ExtendedOrderedList } from '$lib/tiptap/ExtendedOrderedList.js';
+  import { ExtendedCodeBlock } from '$lib/tiptap/ExtendedCodeBlock.js';
   import HardBreak from '@tiptap/extension-hard-break';
   import Dropcursor from '@tiptap/extension-dropcursor';
   import Gapcursor from '@tiptap/extension-gapcursor';
@@ -366,12 +366,12 @@
         Italic,
         Strike,
         Code,
-        CodeBlock,
-        Blockquote,
-        HorizontalRule,
+        ExtendedCodeBlock,
+        ExtendedBlockquote,
+        ExtendedHorizontalRule,
         
         // Lists
-        OrderedList,
+        ExtendedOrderedList,
         ExtendedListItem,
         ListKeymap, // Provides Tab/Shift+Tab behavior for nested lists
         
@@ -1074,7 +1074,7 @@
 {#if dev}
   <div class="fixed top-12 right-4 z-[60] pointer-events-none">
     <div class="bg-purple-600/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded shadow-lg font-mono">
-              search-redesigned-v2
+              transaction-state-fix
     </div>
   </div>
 {/if}
@@ -1500,8 +1500,9 @@
     text-decoration: none !important;
   }
 
-  /* Hidden blocks styling - zero height, no interaction */
-  :global(.hidden-block) {
+  /* Hidden blocks that are NOT the first in a contiguous sequence */
+  /* These get completely collapsed */
+  :global(.hidden-block + .hidden-block) {
     height: 0 !important;
     overflow: hidden !important;
     margin: 0 !important;
@@ -1514,10 +1515,48 @@
     visibility: hidden !important;
     opacity: 0 !important;
     line-height: 0 !important;
+    display: none !important;
   }
 
-  /* Ensure hidden block children are also hidden */
-  :global(.hidden-block *) {
+  /* First hidden block in a sequence - minimal height to show separator */
+  /* BUT only if not nested inside another hidden block */
+  :global(.hidden-block:not(.hidden-block + .hidden-block):not(.hidden-block .hidden-block)) {
+    height: 5px !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    pointer-events: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+    opacity: 1 !important; /* Keep visible for pseudo-element */
+    line-height: 0 !important;
+    position: relative;
+    /* Remove list decorations */
+    list-style: none !important;
+  }
+
+  /* Hidden blocks that are nested inside other hidden blocks - fully collapse */
+  :global(.hidden-block .hidden-block) {
+    height: 0 !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    pointer-events: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    line-height: 0 !important;
+    display: none !important;
+    list-style: none !important;
+  }
+
+  /* Hide content inside first hidden blocks (but keep the block visible for pseudo-element) */
+  :global(.hidden-block:not(.hidden-block + .hidden-block) *) {
     height: 0 !important;
     overflow: hidden !important;
     margin: 0 !important;
@@ -1528,27 +1567,56 @@
     visibility: hidden !important;
     opacity: 0 !important;
     line-height: 0 !important;
+    display: none !important;
   }
 
-  /* Double-line separator for contiguous hidden block regions */
-  /* Show separator after a visible block that is followed by hidden blocks */
-  :global(:not(.hidden-block) + .hidden-block::before) {
+  /* Remove decorations from hidden blocks */
+  :global(.hidden-block) {
+    list-style: none !important;
+  }
+
+  /* Hide checkboxes and labels in hidden task items */
+  :global(.hidden-block label) {
+    display: none !important;
+  }
+  
+  /* Hide bullets, numbers, and other list markers */
+  :global(.hidden-block::marker) {
+    display: none !important;
+  }
+
+  /* Remove margins that would be left by list items */
+  :global(ul .hidden-block, ol .hidden-block) {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+  }
+
+  /* Double-line separator for first hidden block in any sequence */
+  :global(.hidden-block:not(.hidden-block + .hidden-block):not(.hidden-block .hidden-block)::before) {
     content: '';
     display: block;
     width: 100%;
-    height: 1px;
+    height: 5px;
     background: 
       linear-gradient(to right, transparent 0%, #cbd5e1 20%, #cbd5e1 80%, transparent 100%),
       linear-gradient(to right, transparent 0%, #cbd5e1 20%, #cbd5e1 80%, transparent 100%);
     background-size: 100% 1px;
-    background-position: 0 0, 0 4px;
+    background-position: 0 1px, 0 3px;
     background-repeat: no-repeat;
-    margin: 1rem 0;
+    margin: 0;
     opacity: 0.6;
     pointer-events: none;
-    visibility: visible !important;
-    height: 5px !important;
-    overflow: visible !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+  }
+
+  /* Highlight the center-tracked block during search */
+  :global(.search-center-block) {
+    border: 1px solid #3b82f6 !important;
+    border-radius: 4px;
+    position: relative;
   }
 
   /* Block styling with borders */

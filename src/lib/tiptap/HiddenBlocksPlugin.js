@@ -102,11 +102,70 @@ export const HiddenBlocksPlugin = Extension.create({
         
         const { doc } = tr;
         let found = false;
+        const hiddenInThisTransaction = new Set(); // Track blocks hidden in this transaction
         
         doc.descendants((node, pos) => {
           if (node.attrs.blockId === blockId) {
+            // Hide the target node
+            const nodeContent = node.textContent || `[${node.type.name}]`;
+            console.log('🙈 Hiding block:', blockId, nodeContent.substring(0, 50) + (nodeContent.length > 50 ? '...' : ''));
             tr.setNodeMarkup(pos, undefined, { ...node.attrs, hidden: true });
+            hiddenInThisTransaction.add(blockId);
             found = true;
+            
+            // Check if parent nodes should also be hidden
+            const $pos = doc.resolve(pos);
+            for (let depth = $pos.depth - 1; depth >= 0; depth--) {
+              const parentNode = $pos.node(depth);
+              const parentPos = $pos.start(depth) - 1;
+              
+              // Only consider block-level parents that have blockId
+              if (parentNode.attrs && parentNode.attrs.blockId) {
+                const parentContent = parentNode.textContent || `[${parentNode.type.name}]`;
+                console.log(`🔍 Checking parent at depth ${depth}:`, parentNode.attrs.blockId, parentNode.type.name, parentContent.substring(0, 30) + '...');
+                
+                // Check if all direct children with blockId are now hidden (including those hidden in this transaction)
+                let allChildrenHidden = true;
+                let hasChildrenWithBlockId = false;
+                let visibleChildren = [];
+                
+                // Check direct children only (not all descendants)
+                for (let i = 0; i < parentNode.childCount; i++) {
+                  const child = parentNode.child(i);
+                  if (child.attrs && child.attrs.blockId) {
+                    hasChildrenWithBlockId = true;
+                    const childContent = child.textContent || `[${child.type.name}]`;
+                    
+                    // Check if child is hidden in original doc OR in this transaction
+                    const isChildHidden = child.attrs.hidden || hiddenInThisTransaction.has(child.attrs.blockId);
+                    
+                    if (!isChildHidden) {
+                      allChildrenHidden = false;
+                      visibleChildren.push({
+                        id: child.attrs.blockId,
+                        type: child.type.name,
+                        content: childContent.substring(0, 30) + (childContent.length > 30 ? '...' : '')
+                      });
+                    }
+                  }
+                }
+                
+                console.log(`   📊 Children analysis: hasChildren=${hasChildrenWithBlockId}, allHidden=${allChildrenHidden}, visibleCount=${visibleChildren.length}`);
+                if (visibleChildren.length > 0) {
+                  console.log('   👁️ Visible children preventing hiding:', visibleChildren);
+                }
+                
+                // Only hide parent if it has children with blockId and all are hidden
+                if (hasChildrenWithBlockId && allChildrenHidden && !parentNode.attrs.hidden && !hiddenInThisTransaction.has(parentNode.attrs.blockId)) {
+                  console.log('🔄 Hiding parent node:', parentNode.attrs.blockId, parentNode.type.name, 'at pos:', parentPos);
+                  tr.setNodeMarkup(parentPos, undefined, { ...parentNode.attrs, hidden: true });
+                  hiddenInThisTransaction.add(parentNode.attrs.blockId);
+                } else if (hasChildrenWithBlockId && !allChildrenHidden) {
+                  console.log('🚫 NOT hiding parent - has visible children:', parentNode.attrs.blockId, parentNode.type.name);
+                }
+              }
+            }
+            
             return false; // Stop traversing
           }
         });
@@ -122,8 +181,23 @@ export const HiddenBlocksPlugin = Extension.create({
         
         doc.descendants((node, pos) => {
           if (node.attrs.blockId === blockId) {
+            // Show the target node
             tr.setNodeMarkup(pos, undefined, { ...node.attrs, hidden: false });
             found = true;
+            
+            // Show any parent nodes that were hidden (since they now have visible content)
+            const $pos = doc.resolve(pos);
+            for (let depth = $pos.depth - 1; depth >= 0; depth--) {
+              const parentNode = $pos.node(depth);
+              const parentPos = $pos.start(depth) - 1;
+              
+              // Only consider block-level parents that have blockId and are currently hidden
+              if (parentNode.attrs && parentNode.attrs.blockId && parentNode.attrs.hidden) {
+                console.log('🔄 Showing parent node:', parentNode.attrs.blockId, 'at pos:', parentPos);
+                tr.setNodeMarkup(parentPos, undefined, { ...parentNode.attrs, hidden: false });
+              }
+            }
+            
             return false; // Stop traversing
           }
         });

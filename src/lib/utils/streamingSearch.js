@@ -1,6 +1,8 @@
 // Streaming search system for timeline-based document filtering
 // Uses hidden blocks system to show/hide blocks based on search query
 
+import { serializeToMarkdown } from '../tiptap/MarkdownClipboard.js';
+
 export class StreamingSearch {
   constructor(editor, hiddenBlocksPlugin) {
     this.editor = editor;
@@ -9,6 +11,8 @@ export class StreamingSearch {
     this.searchAbortController = null;
     this.currentQuery = '';
     this.centerBlockId = null; // Block to keep centered during search
+    this.scrollTimeout = null; // Debounce scroll updates
+    this.isScrollHandlerActive = false;
   }
 
   // Parse search query into individual words (space-separated, case insensitive)
@@ -43,7 +47,7 @@ export class StreamingSearch {
     });
   }
 
-  // Find the block that's currently closest to center-screen
+  // Find the block that's currently closest to center-screen (avoiding hidden blocks)
   findCenterScreenBlock() {
     if (!this.editor || !this.editor.view) {
       return null;
@@ -64,6 +68,11 @@ export class StreamingSearch {
     // Find block whose DOM element is closest to viewport center
     for (const block of allBlocks) {
       try {
+        // Skip hidden blocks - don't use them as center reference
+        if (block.node.attrs.hidden) {
+          continue;
+        }
+
         // Get DOM node for this block position
         const domAtPos = this.editor.view.domAtPos(block.position);
         if (domAtPos && domAtPos.node) {
@@ -80,6 +89,11 @@ export class StreamingSearch {
           }
           
           if (element) {
+            // Double-check the element isn't hidden in DOM (additional safety)
+            if (element.hasAttribute('data-hidden') && element.getAttribute('data-hidden') === 'true') {
+              continue;
+            }
+
             const rect = element.getBoundingClientRect();
             const elementCenter = rect.top + rect.height / 2;
             const distance = Math.abs(elementCenter - viewportCenter);
@@ -96,8 +110,114 @@ export class StreamingSearch {
       }
     }
 
-    console.log('🎯 Found center-screen block:', closestBlock?.blockId);
+    console.log('🎯 Found center-screen block (avoiding hidden):', closestBlock?.blockId);
     return closestBlock;
+  }
+
+  // Add highlighting to the center-tracked block
+  highlightCenterBlock(blockId) {
+    if (!this.editor || !this.editor.view || !blockId) {
+      return;
+    }
+
+    try {
+      // Remove previous highlighting
+      this.removeCenterBlockHighlight();
+
+      // Find the block in our current document
+      const allBlocks = this.getAllBlocks();
+      const targetBlock = allBlocks.find(b => b.blockId === blockId);
+      
+      if (!targetBlock) {
+        return;
+      }
+
+      // Get DOM position for the block
+      const domAtPos = this.editor.view.domAtPos(targetBlock.position);
+      if (domAtPos && domAtPos.node) {
+        let element = domAtPos.node;
+        
+        // Find the actual block element
+        if (element.nodeType === Node.TEXT_NODE) {
+          element = element.parentElement;
+        }
+        
+        // Find the block-level element
+        while (element && !element.hasAttribute?.('data-block-id')) {
+          element = element.parentElement;
+        }
+        
+        if (element) {
+          element.classList.add('search-center-block');
+          console.log('🎯 Highlighted center block:', blockId);
+        }
+      }
+    } catch (error) {
+      console.error('Error highlighting center block:', error);
+    }
+  }
+
+  // Remove highlighting from all blocks
+  removeCenterBlockHighlight() {
+    if (!this.editor || !this.editor.view) {
+      return;
+    }
+
+    try {
+      const highlightedElements = this.editor.view.dom.querySelectorAll('.search-center-block');
+      highlightedElements.forEach(el => {
+        el.classList.remove('search-center-block');
+      });
+    } catch (error) {
+      console.error('Error removing center block highlight:', error);
+    }
+  }
+
+  // Handle scroll events to update center block tracking
+  handleScroll = () => {
+    // Only update center block if we're currently in an active search
+    if (!this.currentQuery.trim() || !this.isSearching) {
+      return;
+    }
+
+    // Debounce scroll updates to avoid excessive computation
+    if (this.scrollTimeout) {
+      clearTimeout(this.scrollTimeout);
+    }
+
+    this.scrollTimeout = setTimeout(() => {
+      const newCenterBlock = this.findCenterScreenBlock();
+      if (newCenterBlock && newCenterBlock.blockId !== this.centerBlockId) {
+        console.log('📜 Scroll detected - updating center block:', this.centerBlockId, '->', newCenterBlock.blockId);
+        
+        // Remove old highlight and add new one
+        this.removeCenterBlockHighlight();
+        this.centerBlockId = newCenterBlock.blockId;
+        this.highlightCenterBlock(this.centerBlockId);
+      }
+    }, 150); // 150ms debounce
+  };
+
+  // Start listening for scroll events
+  startScrollTracking() {
+    if (!this.isScrollHandlerActive) {
+      window.addEventListener('scroll', this.handleScroll, { passive: true });
+      this.isScrollHandlerActive = true;
+      console.log('📜 Started scroll tracking for center block updates');
+    }
+  }
+
+  // Stop listening for scroll events
+  stopScrollTracking() {
+    if (this.isScrollHandlerActive) {
+      window.removeEventListener('scroll', this.handleScroll);
+      this.isScrollHandlerActive = false;
+      if (this.scrollTimeout) {
+        clearTimeout(this.scrollTimeout);
+        this.scrollTimeout = null;
+      }
+      console.log('📜 Stopped scroll tracking');
+    }
   }
 
   // Scroll to keep a specific block centered (even if hidden)
@@ -163,8 +283,8 @@ export class StreamingSearch {
     this.editor.state.doc.descendants((node, pos) => {
       // Only collect nodes that have block-level attributes
       if (node.attrs && node.attrs.blockId && node.attrs.createdAt) {
-        // Use TipTap's getText() method for better text extraction
-        const nodeText = this.editor.getText({ from: pos, to: pos + node.nodeSize });
+        // Use serializeToMarkdown for reliable text extraction (same as used elsewhere in app)
+        const nodeText = serializeToMarkdown([node]).trim();
         
         blocks.push({
           blockId: node.attrs.blockId,
@@ -194,12 +314,19 @@ export class StreamingSearch {
     const queryWords = this.parseQuery(query);
     console.log('🔍 Parsed query words:', queryWords);
     
-    // Find center-screen block when starting search (if not already set)
-    if (!this.centerBlockId && queryWords.length > 0) {
+    // Find center-screen block only when transitioning from empty query to non-empty
+    const wasEmpty = this.currentQuery.trim() === '';
+    const isNowNonEmpty = queryWords.length > 0;
+    
+    if (wasEmpty && isNowNonEmpty && !this.centerBlockId) {
       const centerBlock = this.findCenterScreenBlock();
       if (centerBlock) {
         this.centerBlockId = centerBlock.blockId;
-        console.log('🎯 Set center block for search:', this.centerBlockId);
+        console.log('🎯 Set center block for NEW search (was empty):', this.centerBlockId);
+        // Highlight the center block
+        this.highlightCenterBlock(this.centerBlockId);
+        // Start tracking scroll events to update center block
+        this.startScrollTracking();
       }
     }
     
@@ -247,11 +374,11 @@ export class StreamingSearch {
             // Block should be visible - ensure it's shown
             this.showBlock(block.blockId);
             matchedCount++;
-            console.log('✅ Block should be visible:', block.blockId);
+            console.log('✅ Block should be visible:', block.blockId, block.nodeType);
           } else {
             // Block should be hidden - ensure it's hidden
             this.hideBlock(block.blockId);
-            console.log('🙈 Block should be hidden:', block.blockId);
+            console.log('🙈 Block should be hidden:', block.blockId, block.nodeType);
           }
           
           processedCount++;
@@ -265,6 +392,11 @@ export class StreamingSearch {
             matched: matchedCount,
             query: query
           });
+        }
+
+        // Auto-scroll to keep center block in view after each chunk
+        if (this.centerBlockId && !this.searchAbortController.signal.aborted) {
+          this.scrollToKeepBlockCentered(this.centerBlockId);
         }
 
         // Yield control to prevent blocking UI
@@ -283,13 +415,6 @@ export class StreamingSearch {
       }
 
       console.log('✅ Search completed - matched:', matchedCount, 'total:', sortedBlocks.length);
-
-      // Auto-scroll to keep center block in view (with small delay to let DOM update)
-      if (this.centerBlockId && !this.searchAbortController.signal.aborted) {
-        setTimeout(() => {
-          this.scrollToKeepBlockCentered(this.centerBlockId);
-        }, 100);
-      }
 
     } catch (error) {
       console.error('Search error:', error);
@@ -334,6 +459,17 @@ export class StreamingSearch {
       this.searchAbortController.abort();
     }
     
+    // Scroll to center block before clearing (while we still have the reference)
+    if (this.centerBlockId) {
+      this.scrollToKeepBlockCentered(this.centerBlockId);
+    }
+    
+    // Stop scroll tracking since search is ending
+    this.stopScrollTracking();
+    
+    // Remove center block highlighting
+    this.removeCenterBlockHighlight();
+    
     this.showAllBlocks();
     this.isSearching = false;
     this.currentQuery = '';
@@ -355,6 +491,7 @@ export class StreamingSearch {
   // Destroy the search instance
   destroy() {
     this.clearSearch();
+    this.stopScrollTracking(); // Ensure scroll tracking is cleaned up
     this.editor = null;
     this.hiddenBlocksPlugin = null;
   }
