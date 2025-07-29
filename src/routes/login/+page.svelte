@@ -2,6 +2,7 @@
   import { authActions } from '$lib/stores/auth.js';
   import { goto } from '$app/navigation';
   import { onMount, tick } from 'svelte';
+  import ZaiLogo from '$lib/components/ZaiLogo.svelte';
   
   let phone = '';
   let otp = '';
@@ -116,11 +117,8 @@
 <div class="min-h-screen bg-white flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
   <div class="max-w-sm w-full space-y-4">
     <div class="text-center">
-      <h1 class="text-4xl font-light text-gray-900 tracking-wide flex items-center justify-center">
-        za<span class="opacity-0">i</span><svg class="w-8 h-8 -ml-[1.25rem] mt-[0.05rem]" fill="currentColor" viewBox="0 0 24 24">
-          <circle cx="12" cy="6" r="3" />
-          <path d="M12 9L12 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-        </svg>
+      <h1 class="flex items-center justify-center">
+        <ZaiLogo size="lg" color="text-gray-900" />
       </h1>
     </div>
 

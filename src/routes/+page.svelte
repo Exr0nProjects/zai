@@ -42,6 +42,7 @@
   import { KeyboardNavigation } from '$lib/tiptap/KeyboardNavigationPlugin.js';
   import { tagManager, isTagProcessing, tagStats } from '$lib/utils/tagManager.js';
   import { dev } from '$app/environment';
+  import ZaiLogo from '$lib/components/ZaiLogo.svelte';
   
   // Online/offline detection
   let isOnline = true;
@@ -1033,9 +1034,9 @@
 
 <!-- Development Version Tag -->
 {#if dev}
-  <div class="fixed top-4 right-4 z-[60] pointer-events-none">
-    <div class="bg-purple-600/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded shadow-lg font-mono">
-      IGNORE-CURSOR-EMPTY
+  <div class="fixed right-4 z-[60] pointer-events-none" style="top: 46px;">
+    <div class="bg-purple-600/90 backdrop-blur-md shadow-lg rounded-full px-3 py-1.5 border border-purple-500/20">
+      <div class="text-white text-xs font-mono tracking-wide">ZAI-LOGO-PILLS</div>
     </div>
   </div>
 {/if}
@@ -1059,30 +1060,25 @@
     <div class="flex items-center space-x-2 pointer-events-auto">
       <!-- Tag Processing Indicator -->
       {#if $isTagProcessing}
-        <div class="bg-blue-100/90 backdrop-blur-md shadow-lg rounded-full p-2 animate-pulse"
+        <div class="bg-blue-50/90 backdrop-blur-md shadow-lg rounded-full px-3 py-1.5 border border-blue-200/50 animate-pulse"
              title="Processing tags...">
-          <div class="text-xs">🏷️</div>
+          <div class="text-xs text-blue-600 font-medium">🏷️ processing</div>
         </div>
       {/if}
       
       <!-- Debug Button -->
       <button
         on:click={toggleBlockDebug}
-        class="opacity-10 hover:opacity-100 transition-opacity duration-200 bg-white/90 backdrop-blur-md shadow-lg rounded-full p-2"
+        class="opacity-10 hover:opacity-100 transition-opacity duration-200 bg-white/90 backdrop-blur-md shadow-lg rounded-full px-3 py-1.5 border border-gray-200/50"
         title="Toggle block debug info"
       >
-        <div class="text-xs">📊</div>
+        <div class="text-xs text-gray-600 font-medium">📊 debug</div>
       </button>
       
       <!-- Zai with online indicator -->
       <div class="opacity-10 hover:opacity-100 transition-opacity duration-200">
-        <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2 flex items-center space-x-2">
-          <div class="text-sm text-gray-600 font-light tracking-wide flex items-center">
-            za<svg class="w-3 h-3 mx-0.5" fill="currentColor" viewBox="0 0 24 24">
-              <circle cx="12" cy="6" r="3" />
-              <path d="M12 9L12 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-            </svg>
-          </div>
+        <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2 flex items-center space-x-2 border border-gray-200/50">
+          <ZaiLogo size="sm" color="text-gray-600" />
           <div 
             class="w-1.5 h-1.5 rounded-full {isOnline ? 'bg-green-500' : 'bg-gray-300'} transition-colors duration-200"
             title={isOnline ? 'Online' : 'Offline'}
