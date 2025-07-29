@@ -1,6 +1,12 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
+/* CSS Variables for consistent theming */
+:root {
+  --accent-light: #3b82f6;
+  --accent-dark: #2563eb;
+}
+
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {
   html {
@@ -31,7 +37,7 @@
   
   /* Timeline markers */
   .timeline-marker {
-    border-color: #3b82f6 !important;
+    border-color: var(--accent-light) !important;
   }
   
   /* Search input */
@@ -87,6 +93,30 @@
   
   .border-gray-200 {
     border-color: #444 !important;
+  }
+}
+
+/* Search highlighting */
+.search-highlight {
+  background: rgba(59, 130, 246, 0.2) !important; /* var(--accent-light) with 20% opacity */
+  color: inherit !important;
+  border-radius: 4px !important;
+  padding: 1px 2px !important;
+  box-decoration-break: clone !important;
+  -webkit-box-decoration-break: clone !important;
+}
+
+/* Don't show highlights on hidden blocks */
+.hidden-block .search-highlight {
+  background: transparent !important;
+  color: inherit !important;
+}
+
+/* Dark mode search highlights */
+@media (prefers-color-scheme: dark) {
+  .search-highlight {
+    background: rgba(37, 99, 235, 0.2) !important; /* var(--accent-dark) with 20% opacity */
+    color: inherit !important;
   }
 }
 
@@ -152,7 +182,7 @@
 
 /* Debug styles for new blocks */
 .debug-new-block {
-  border: 1px solid #3b82f6 !important;
+  border: 1px solid var(--accent-light) !important;
   position: relative;
 }
 
@@ -161,7 +191,7 @@
   position: absolute;
   top: -8px;
   right: -8px;
-  background: #3b82f6;
+  background: var(--accent-light);
   color: white;
   font-size: 8px;
   padding: 1px 3px;
@@ -171,7 +201,7 @@
 }
 
 .debug-new-block-parent {
-  border: 1px dashed #3b82f6 !important;
+  border: 1px dashed var(--accent-light) !important;
   position: relative;
 }
 
@@ -180,7 +210,7 @@
   position: absolute;
   top: -8px;
   left: -8px;
-  background: #3b82f6;
+  background: var(--accent-light);
   color: white;
   font-size: 8px;
   padding: 1px 3px;

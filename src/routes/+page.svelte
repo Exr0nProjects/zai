@@ -46,6 +46,8 @@
   import { StreamingSearch } from '$lib/utils/streamingSearch.js';
   import { dev } from '$app/environment';
   import ZaiLogo from '$lib/components/ZaiLogo.svelte';
+  import { searchHiddenBlocks } from '../lib/stores/searchHidden.js';
+  import { SearchHighlightPlugin } from '../lib/tiptap/SearchHighlightPlugin.js';
   
   // Online/offline detection
   let isOnline = true;
@@ -484,6 +486,7 @@
         Placeholder.configure({
           placeholder: 'What do you think?',
         }),
+        SearchHighlightPlugin,
       ],
       // No initial content - Y.js will manage document state
     });
@@ -1312,7 +1315,7 @@
 
 <!-- Fixed top-right floating version tag -->
 <div class="fixed top-4 right-4 bg-accent/10 text-accent px-3 py-1 rounded-full text-sm font-medium z-50 select-none">
-	hidden-css-indicators
+	search-list-context
 </div>
 
 <!-- Editor with internal spacing -->

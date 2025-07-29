@@ -5,6 +5,7 @@ const LOG = true;
 
 import { serializeToMarkdown } from '../tiptap/MarkdownClipboard.js';
 import { hideBlockInSearch, showBlockInSearch, clearSearchHiding, searchHiddenBlocks } from '../stores/searchHidden.js';
+import { setSearchHighlight, clearSearchHighlight } from '../tiptap/SearchHighlightPlugin.js';
 import { get } from 'svelte/store';
 
 export class StreamingSearch {
@@ -313,13 +314,20 @@ export class StreamingSearch {
     this.currentQuery = query;
     this.searchAbortController = new AbortController();
 
+    // Set search highlighting
+    setSearchHighlight(query);
+
     try {
       let processedCount = 0;
       let matchedCount = 0;
 
-      // Process document recursively using TipTap's native structure
-      const processNode = (node, pos, depth = 0) => {
-        if (depth > 30) { // Prevent runaway recursion
+      // Two-pass algorithm for proper parent visibility
+      const shouldShowBlocks = new Set(); // Blocks that should be visible
+      const allNodes = []; // Store all nodes for second pass
+
+      // First pass: Find all matching nodes and mark ancestors for visibility
+      const collectMatches = (node, pos, depth = 0) => {
+        if (depth > 30) {
           console.warn('🛑 SEARCH Max depth reached, stopping recursion');
           return;
         }
@@ -328,46 +336,55 @@ export class StreamingSearch {
           return;
         }
 
-        // Only process nodes with blockId (actual blocks)
+        // Store node info for second pass
         if (node.attrs && node.attrs.blockId) {
+          allNodes.push({ node, pos, depth });
+          
           const nodeContent = this.getNodeContent(node);
           const nodeMatches = this.contentMatches(nodeContent, queryWords);
-
-          // Check if any descendants match
           const subtreeMatches = nodeMatches || this.hasMatchingDescendants(node, queryWords);
 
           if (subtreeMatches) {
-            this.showBlock(node.attrs.blockId);
+            // This node should be shown, and so should all its ancestors
+            this.markAncestorsForVisibility(node, pos, shouldShowBlocks);
+            shouldShowBlocks.add(node.attrs.blockId);
             matchedCount++;
-            if (LOG) console.log('✅ Block should be visible:', node.attrs.blockId, node.type.name);
-          } else {
-            this.hideBlock(node.attrs.blockId);
-            if (LOG) console.log('🙈 Block should be hidden:', node.attrs.blockId, node.type.name);
           }
 
           processedCount++;
         }
 
-        // Recurse into children with correct position calculation
-        let childPos = pos + 1; // Start after the opening tag of current node
+        // Recurse into children
+        let childPos = pos + 1;
         node.content.forEach((child, index) => {
-          processNode(child, childPos, depth + 1);
-          childPos += child.nodeSize; // Move position by the size of the child
+          collectMatches(child, childPos, depth + 1);
+          childPos += child.nodeSize;
         });
       };
 
-      // Start processing from document root
+      // Start first pass from document root
       let rootPos = 0;
       this.editor.state.doc.content.forEach((child, index) => {
-        processNode(child, rootPos, 0);
+        collectMatches(child, rootPos, 0);
         rootPos += child.nodeSize;
       });
+
+      // Second pass: Apply show/hide decisions
+      for (const { node } of allNodes) {
+        if (shouldShowBlocks.has(node.attrs.blockId)) {
+          this.showBlock(node.attrs.blockId);
+          if (LOG) console.log('✅ Block should be visible:', node.attrs.blockId, node.type.name);
+        } else {
+          this.hideBlock(node.attrs.blockId);
+          if (LOG) console.log('🙈 Block should be hidden:', node.attrs.blockId, node.type.name);
+        }
+      }
 
       // Final progress report
       if (onProgress && !this.searchAbortController.signal.aborted) {
         onProgress({
           processed: processedCount,
-          total: processedCount, // We don't pre-count, so use processed as total
+          total: processedCount,
           matched: matchedCount,
           query: query,
           completed: true
@@ -421,6 +438,9 @@ export class StreamingSearch {
     // Remove center block highlighting
     this.removeCenterBlockHighlight();
     
+    // Clear search highlighting
+    clearSearchHighlight();
+    
     this.showAllBlocks();
     this.isSearching = false;
     this.currentQuery = '';
@@ -456,6 +476,57 @@ export class StreamingSearch {
     });
     
     return hasMatch;
+  }
+
+  // Mark all ancestors of a matching node for visibility
+  markAncestorsForVisibility(node, pos, shouldShowBlocks) {
+    // Walk up the document tree from this position
+    const $pos = this.editor.state.doc.resolve(pos);
+    
+    for (let depth = $pos.depth; depth >= 0; depth--) {
+      const ancestorNode = $pos.node(depth);
+      if (ancestorNode.attrs && ancestorNode.attrs.blockId) {
+        shouldShowBlocks.add(ancestorNode.attrs.blockId);
+        if (LOG) console.log('👆 Marking ancestor for visibility:', ancestorNode.attrs.blockId, ancestorNode.type.name);
+        
+        // If this ancestor is a list, also mark its previous sibling for visibility
+        if (this.isListNode(ancestorNode)) {
+          const prevSibling = this.findPreviousSibling($pos, depth);
+          if (prevSibling && prevSibling.attrs && prevSibling.attrs.blockId) {
+            shouldShowBlocks.add(prevSibling.attrs.blockId);
+            if (LOG) console.log('👈 Marking previous sibling of list for visibility:', prevSibling.attrs.blockId, prevSibling.type.name);
+          }
+        }
+      }
+    }
+  }
+
+  // Check if a node is a list type (bullet list, ordered list, or task list)
+  isListNode(node) {
+    return node.type.name === 'bulletList' || 
+           node.type.name === 'orderedList' || 
+           node.type.name === 'taskList';
+  }
+
+  // Find the previous sibling of a node at a specific depth
+  findPreviousSibling($pos, depth) {
+    if (depth <= 0) return null;
+    
+    try {
+      // Get the parent node and the position within it
+      const parent = $pos.node(depth - 1);
+      const indexInParent = $pos.index(depth - 1);
+      
+      // Check if there's a previous sibling
+      if (indexInParent > 0) {
+        const prevSibling = parent.child(indexInParent - 1);
+        return prevSibling;
+      }
+    } catch (error) {
+      if (LOG) console.warn('Error finding previous sibling:', error);
+    }
+    
+    return null;
   }
 
   // Get content from a single node using serializeToMarkdown
