@@ -40,6 +40,7 @@
   import { TagParser } from '$lib/tiptap/TagParser.js';
   import { InputRuleTagParser } from '$lib/tiptap/InputRuleTagParser.js';
   import { KeyboardNavigation } from '$lib/tiptap/KeyboardNavigationPlugin.js';
+  import { HiddenBlocksPlugin } from '$lib/tiptap/HiddenBlocksPlugin.js';
   import { tagManager, isTagProcessing, tagStats } from '$lib/utils/tagManager.js';
   import { dev } from '$app/environment';
   
@@ -61,6 +62,9 @@
   let isSearchExpanded = false;
   let keyboardHeight = 0;
   
+  // Hidden blocks debug state
+  let isHidingAlternateBlocks = false;
+  
   // Link management
   let linkMenuElement;
   let showLinkMenu = false;
@@ -74,11 +78,86 @@
   // Reactive current link URL that updates when trigger changes
   $: currentLinkUrl = linkRefreshTrigger >= 0 ? getCurrentLinkUrl() : '';
   
+  // Toggle hiding alternate blocks for testing
+  function toggleHideAlternateBlocks() {
+    console.log('🔘 Toggle button clicked, current state:', isHidingAlternateBlocks);
+    
+    if (!editor) {
+      console.log('❌ No editor found');
+      return;
+    }
+
+    // Check if commands are available
+    console.log('🔍 Available commands:', {
+      hideBlock: typeof editor.commands.hideBlock,
+      showAllBlocks: typeof editor.commands.showAllBlocks,
+      toggleBlockVisibility: typeof editor.commands.toggleBlockVisibility
+    });
+    
+    if (isHidingAlternateBlocks) {
+      // Show all blocks
+      console.log('👁️ Showing all blocks');
+      const result = editor.commands.showAllBlocks();
+      console.log('showAllBlocks result:', result);
+      isHidingAlternateBlocks = false;
+    } else {
+      // Debug: See what's actually in the document
+      const allNodes = [];
+      editor.state.doc.descendants((node, pos) => {
+        allNodes.push({
+          type: node.type.name,
+          attrs: node.attrs,
+          content: node.textContent?.slice(0, 50) || '',
+          pos
+        });
+      });
+      console.log('📄 All nodes in document:', allNodes);
+      
+      // Hide every other block
+      const blocks = getAllBlocks(editor.state.doc);
+      console.log('📦 Found blocks with blockId+createdAt:', blocks.length, blocks);
+      
+      // If no timestamped blocks, try hiding any block-level nodes
+      if (blocks.length === 0) {
+        console.log('🔄 No timestamped blocks found, trying all block-level nodes...');
+        let blockIndex = 0;
+        editor.state.doc.descendants((node, pos) => {
+          // Hide block-level nodes (not text nodes)
+          if (node.isBlock && node.type.name !== 'doc') {
+            if (blockIndex % 2 === 1) {
+              console.log(`🫥 Hiding node ${blockIndex}:`, node.type.name, 'at pos', pos);
+              // For nodes without blockId, use position as identifier
+              const result = editor.view.dispatch(
+                editor.state.tr.setNodeMarkup(pos, undefined, { 
+                  ...node.attrs, 
+                  hidden: true 
+                })
+              );
+              console.log('Manual hide result:', !!result);
+            }
+            blockIndex++;
+          }
+        });
+      } else {
+        // Use timestamped blocks
+        blocks.forEach((block, index) => {
+          if (index % 2 === 1) { // Hide odd-indexed blocks (every other)
+            console.log(`🫥 Hiding block ${index}:`, block.blockId, block.nodeType);
+            const result = editor.commands.hideBlock(block.blockId);
+            console.log('hideBlock result:', result);
+          }
+        });
+      }
+      isHidingAlternateBlocks = true;
+    }
+    
+    console.log('🔄 New state:', isHidingAlternateBlocks);
+  }
+
   // Get current link URL from DOM
   function getCurrentLinkUrl() {
     if (!editor) return '';
     
-    console.log('getCurrentLinkUrl');
     try {
       // Get the current selection position
       const { from } = editor.state.selection;
@@ -363,7 +442,6 @@
             
             if (isInLink) {
               // Explicitly update current link URL when we detect we're in a link
-              console.log('shouldShow: updating link URL');
               currentLinkUrl = getCurrentLinkUrl();
             }
             
@@ -379,7 +457,6 @@
               // Re-poll active link state when bubble menu shows
               isHoveringLink = true;
               // Explicitly get and update current link URL
-              console.log('\n\n\nshowpilll\n\n\n')
               currentLinkUrl = getCurrentLinkUrl();
               // Force reactivity update for pill width and content
               linkRefreshTrigger++;
@@ -423,6 +500,7 @@
         TagParser, // Auto-convert hashtags to tag mentions
         InputRuleTagParser, // Convert hashtags on typing
         KeyboardNavigation, // Remove tab index from irrelevant elements
+        HiddenBlocksPlugin, // Enable hiding blocks with zero height and no interaction
         Placeholder.configure({
           placeholder: 'What do you think?',
         }),
@@ -619,16 +697,7 @@
     const blocks = getAllBlocks(editor);
     const sortedBlocks = sortBlocksByTimestamp(blocks, ascending);
     
-    console.log('📊 Block sorting:', {
-      total: blocks.length,
-      direction: ascending ? 'ascending' : 'descending',
-      blocks: sortedBlocks.map(b => ({
-        id: b.blockId,
-        type: b.nodeType,
-        created: new Date(b.createdAt).toLocaleString(),
-        content: b.content.slice(0, 50),
-      }))
-    });
+    // Block sorting complete
   }
 
   function toggleBlockDebug() {
@@ -679,9 +748,6 @@
         // Focus editor and try to position cursor near found text
         editor.commands.focus();
         // Note: More sophisticated search/highlight would require additional extensions
-        console.log('Found text at position:', searchIndex);
-      } else {
-        console.log('Text not found');
       }
     }
   }
@@ -912,9 +978,9 @@
 
 <!-- Development Version Tag -->
 {#if dev}
-  <div class="fixed top-4 right-4 z-[60] pointer-events-none">
+  <div class="fixed top-12 right-4 z-[60] pointer-events-none">
     <div class="bg-purple-600/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded shadow-lg font-mono">
-      priority-enter-v10
+              hidden-blocks-v3
     </div>
   </div>
 {/if}
@@ -944,6 +1010,17 @@
         </div>
       {/if}
       
+      <!-- Hidden Blocks Toggle Button -->
+      <button
+        on:click={toggleHideAlternateBlocks}
+        class={`opacity-20 hover:opacity-100 transition-opacity duration-200 backdrop-blur-md shadow-lg rounded-full p-2 ${isHidingAlternateBlocks ? 'bg-red-100' : 'bg-white/90'}`}
+        title={isHidingAlternateBlocks ? "Show All Blocks" : "Hide Alternate Blocks"}
+      >
+        <div class="text-xs">
+          {isHidingAlternateBlocks ? '👁️‍🗨️' : '🫥'}
+        </div>
+      </button>
+
       <!-- Debug Button -->
       <button
         on:click={toggleBlockDebug}
@@ -1307,7 +1384,7 @@
 <style>
   :global(:root) {
     --debug-borders: none; /* Change to "1px solid red" to show debug borders */
-    --block-borders: none; /* Change to "1px solid #000" to show block borders */
+    --block-borders: 1px solid black; /* Change to "1px solid #000" to show block borders */
     --block-hover-bg: none; /* Change to "rgba(0, 0, 0, 0.02)" to show hover background */
   }
 
@@ -1323,6 +1400,36 @@
   /* Force remove underlines from all links */
   :global(.ProseMirror a) {
     text-decoration: none !important;
+  }
+
+  /* Hidden blocks styling - zero height, no interaction */
+  :global(.hidden-block) {
+    height: 0 !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    pointer-events: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    line-height: 0 !important;
+  }
+
+  /* Ensure hidden block children are also hidden */
+  :global(.hidden-block *) {
+    height: 0 !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    pointer-events: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    line-height: 0 !important;
   }
 
   /* Block styling with borders */

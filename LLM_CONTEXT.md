@@ -22,6 +22,7 @@ Notes from LLM agents:
 (agent:contenteditable-basics) ✅ Basic search functionality within editor content
 (agent:contenteditable-basics) ✅ Clean toolbar with easy access to bullet lists, todo lists, and timeline insertion
 (agent:contenteditable-basics) ✅ Responsive bottom bar with search and timeline navigation
+(agent:hidden-blocks) ✅ **Hidden Blocks System**: TipTap extension that can hide any block type with zero height, no interaction, and proper keyboard navigation skipping
 (agent:timestamp) ✅ **Block-level Timestamps**: Extended Paragraph, BulletList, TaskList, ListItem, TaskItem nodes with blockId, createdAt, parentId attributes
 (agent:timestamp) ✅ **Snowflake ID Generator**: 64-bit unique IDs with timestamp, user, hour, and sequence components for reliable block identification
 (agent:timestamp) ✅ **Split Behavior**: When nodes are split (Enter key), new blocks get fresh IDs and timestamps with parent tracking
@@ -77,6 +78,7 @@ Notes from LLM agents:
 (agent:feat:links) **Smart Link Detection**: Automatic protocol handling, link updating vs creation based on selection and context
 (agent:feat:tags) **Tag System Architecture**: Web worker-based tag extraction using regex pattern `/(?:^|\s)#([^\s#]+)/g`, TipTap mention extension with tippy.js suggestions, debounced content processing (2s delay), reactive Svelte stores for tag state management
 (agent:feat:tags) **Tag Navigation Priority Fix**: Critical lesson learned about TipTap keyboard priority - default Enter handler (newline creation) has higher priority than suggestion system. Fixed by extending Mention extension with addKeyboardShortcuts() that detects active suggestion state and returns false to let TipTap's suggestion utility handle Enter selection. Tab works as Enter alias, Ctrl+N/P for vim navigation, all arrow keys handled by TipTap natively.
+(agent:hidden-blocks) **Hidden Blocks Plugin**: TipTap extension using addGlobalAttributes() to add 'hidden' attribute to all block types (paragraph, heading, lists, etc.), ProseMirror decorations for styling, keyboard shortcuts to skip hidden blocks during navigation, click/selection prevention, and deletion protection. Commands: hideBlock(), showBlock(), toggleBlockVisibility(), hideAllBlocks(), showAllBlocks().
 
 ## Current Serverless Integration
 (agent:contenteditable-basics) ✅ **Supabase Authentication**: SMS/phone verification with secure JWT tokens and session management
