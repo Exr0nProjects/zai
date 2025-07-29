@@ -8,6 +8,7 @@ export class StreamingSearch {
     this.isSearching = false;
     this.searchAbortController = null;
     this.currentQuery = '';
+    this.centerBlockId = null; // Block to keep centered during search
   }
 
   // Parse search query into individual words (space-separated, case insensitive)
@@ -42,6 +43,115 @@ export class StreamingSearch {
     });
   }
 
+  // Find the block that's currently closest to center-screen
+  findCenterScreenBlock() {
+    if (!this.editor || !this.editor.view) {
+      return null;
+    }
+
+    const allBlocks = this.getAllBlocks();
+    if (allBlocks.length === 0) {
+      return null;
+    }
+
+    // Get viewport center
+    const viewportHeight = window.innerHeight;
+    const viewportCenter = viewportHeight / 2;
+    
+    let closestBlock = null;
+    let closestDistance = Infinity;
+
+    // Find block whose DOM element is closest to viewport center
+    for (const block of allBlocks) {
+      try {
+        // Get DOM node for this block position
+        const domAtPos = this.editor.view.domAtPos(block.position);
+        if (domAtPos && domAtPos.node) {
+          let element = domAtPos.node;
+          
+          // Find the actual block element
+          if (element.nodeType === Node.TEXT_NODE) {
+            element = element.parentElement;
+          }
+          
+          // Find the block-level element with the blockId
+          while (element && !element.hasAttribute?.('data-block-id')) {
+            element = element.parentElement;
+          }
+          
+          if (element) {
+            const rect = element.getBoundingClientRect();
+            const elementCenter = rect.top + rect.height / 2;
+            const distance = Math.abs(elementCenter - viewportCenter);
+            
+            if (distance < closestDistance) {
+              closestDistance = distance;
+              closestBlock = block;
+            }
+          }
+        }
+      } catch (error) {
+        // Skip blocks that cause errors
+        continue;
+      }
+    }
+
+    console.log('🎯 Found center-screen block:', closestBlock?.blockId);
+    return closestBlock;
+  }
+
+  // Scroll to keep a specific block centered (even if hidden)
+  scrollToKeepBlockCentered(blockId) {
+    if (!this.editor || !this.editor.view || !blockId) {
+      return;
+    }
+
+    try {
+      // Find the block in our current document
+      const allBlocks = this.getAllBlocks();
+      const targetBlock = allBlocks.find(b => b.blockId === blockId);
+      
+      if (!targetBlock) {
+        console.log('❌ Target block not found for scrolling:', blockId);
+        return;
+      }
+
+      // Get DOM position for the block
+      const domAtPos = this.editor.view.domAtPos(targetBlock.position);
+      if (domAtPos && domAtPos.node) {
+        let element = domAtPos.node;
+        
+        // Find the actual block element
+        if (element.nodeType === Node.TEXT_NODE) {
+          element = element.parentElement;
+        }
+        
+        // Find the block-level element
+        while (element && !element.hasAttribute?.('data-block-id')) {
+          element = element.parentElement;
+        }
+        
+        if (element) {
+          // Scroll to center this element
+          const rect = element.getBoundingClientRect();
+          const viewportCenter = window.innerHeight / 2;
+          const elementCenter = rect.top + rect.height / 2;
+          const scrollOffset = elementCenter - viewportCenter;
+          
+          if (Math.abs(scrollOffset) > 10) { // Only scroll if significantly off-center
+            window.scrollBy({
+              top: scrollOffset,
+              behavior: 'smooth'
+            });
+            console.log('📜 Scrolled to keep block centered:', blockId);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error scrolling to block:', error);
+    }
+  }
+
   // Get all blocks from the editor
   getAllBlocks() {
     const blocks = [];
@@ -53,13 +163,16 @@ export class StreamingSearch {
     this.editor.state.doc.descendants((node, pos) => {
       // Only collect nodes that have block-level attributes
       if (node.attrs && node.attrs.blockId && node.attrs.createdAt) {
+        // Use TipTap's getText() method for better text extraction
+        const nodeText = this.editor.getText({ from: pos, to: pos + node.nodeSize });
+        
         blocks.push({
           blockId: node.attrs.blockId,
           createdAt: node.attrs.createdAt,
           parentId: node.attrs.parentId,
           nodeType: node.type.name,
           position: pos,
-          content: node.textContent || '',
+          content: nodeText || '',
           node: node,
         });
       }
@@ -80,6 +193,15 @@ export class StreamingSearch {
     // Parse query
     const queryWords = this.parseQuery(query);
     console.log('🔍 Parsed query words:', queryWords);
+    
+    // Find center-screen block when starting search (if not already set)
+    if (!this.centerBlockId && queryWords.length > 0) {
+      const centerBlock = this.findCenterScreenBlock();
+      if (centerBlock) {
+        this.centerBlockId = centerBlock.blockId;
+        console.log('🎯 Set center block for search:', this.centerBlockId);
+      }
+    }
     
     this.isSearching = true;
     this.currentQuery = query;
@@ -162,6 +284,13 @@ export class StreamingSearch {
 
       console.log('✅ Search completed - matched:', matchedCount, 'total:', sortedBlocks.length);
 
+      // Auto-scroll to keep center block in view (with small delay to let DOM update)
+      if (this.centerBlockId && !this.searchAbortController.signal.aborted) {
+        setTimeout(() => {
+          this.scrollToKeepBlockCentered(this.centerBlockId);
+        }, 100);
+      }
+
     } catch (error) {
       console.error('Search error:', error);
     } finally {
@@ -208,6 +337,7 @@ export class StreamingSearch {
     this.showAllBlocks();
     this.isSearching = false;
     this.currentQuery = '';
+    this.centerBlockId = null; // Reset center block tracking
     
     console.log('✅ Search cleared, all blocks should be visible');
   }

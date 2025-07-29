@@ -1530,6 +1530,27 @@
     line-height: 0 !important;
   }
 
+  /* Double-line separator for contiguous hidden block regions */
+  /* Show separator after a visible block that is followed by hidden blocks */
+  :global(:not(.hidden-block) + .hidden-block::before) {
+    content: '';
+    display: block;
+    width: 100%;
+    height: 1px;
+    background: 
+      linear-gradient(to right, transparent 0%, #cbd5e1 20%, #cbd5e1 80%, transparent 100%),
+      linear-gradient(to right, transparent 0%, #cbd5e1 20%, #cbd5e1 80%, transparent 100%);
+    background-size: 100% 1px;
+    background-position: 0 0, 0 4px;
+    background-repeat: no-repeat;
+    margin: 1rem 0;
+    opacity: 0.6;
+    pointer-events: none;
+    visibility: visible !important;
+    height: 5px !important;
+    overflow: visible !important;
+  }
+
   /* Block styling with borders */
   :global(.block-with-info) {
     border: var(--block-borders);
