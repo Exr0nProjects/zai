@@ -393,6 +393,11 @@ export class StreamingSearch {
 
       if (LOG) console.log('✅ Search completed - matched:', matchedCount, 'total:', processedCount);
 
+      // Scroll to keep the center block centered after search updates
+      if (this.centerBlockId) {
+        this.scrollToKeepBlockCentered(this.centerBlockId);
+      }
+
     } catch (error) {
       console.error('Search error:', error);
     } finally {

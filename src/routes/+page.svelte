@@ -49,6 +49,9 @@
   import { searchHiddenBlocks } from '../lib/stores/searchHidden.js';
   import { SearchHighlightPlugin } from '../lib/tiptap/SearchHighlightPlugin.js';
   
+  // Debug flags (change these in code as needed)
+  const debugNewBlocks = false; // Set to true to show blue borders on new blocks
+  
   // Online/offline detection
   let isOnline = true;
   
@@ -60,13 +63,11 @@
   let streamingSearch = null;
   let searchProgress = { processed: 0, total: 0, matched: 0, completed: false };
   
+  // Track when search is empty (has query but no matches)
+  $: isSearchEmpty = searchQuery.trim().length > 0 && searchProgress.completed && searchProgress.matched === 0;
+  
   // Simple timeline management
   let timelinePosition = null;
-  
-  // Block management
-  let blockStats = { total: 0, byType: {}, withParents: 0, orphaned: 0, timeRange: null };
-  let showBlockDebug = false;
-  let debugNewBlocks = false; // Debug flag for new block detection
   
   // Mobile UI state
   let isSearchExpanded = false;
@@ -499,14 +500,7 @@
         window.debugSearchStore = debugSearchStore;
         window.debugEditorRef = debugEditorRef;
         
-        // Add debug new blocks toggle function
-        window.toggleDebugNewBlocks = () => {
-          debugNewBlocks = !debugNewBlocks;
-          console.log(`🔧 Debug new blocks: ${debugNewBlocks ? 'ENABLED' : 'DISABLED'}`);
-          console.log('   New blocks will be outlined with blue borders');
-          console.log('   Parent blocks will be outlined with dashed blue borders');
-          return debugNewBlocks;
-        };
+        // Debug new blocks is now a code-only flag (change const debugNewBlocks at top of file)
         
         // Add TipTap debug functions
         window.debugTipTapTree = () => {
@@ -727,13 +721,8 @@
       }
     });
     
-    // Update block stats and extract tags periodically
+    // Extract tags periodically
     if (editor) {
-      const updateStats = () => {
-        const blocks = getAllBlocks(editor);
-        blockStats = getBlockStats(blocks);
-      };
-      
       const extractTags = async () => {
         if (!editor) return;
         
@@ -746,9 +735,8 @@
         }
       };
       
-      // Update stats on editor changes
+      // Update title on editor changes
       editor.on('update', () => {
-        updateStats();
         updateDocumentTitle();
         // Debounce tag extraction to avoid excessive processing
         clearTimeout(window.tagExtractionTimeout);
@@ -760,9 +748,6 @@
         updateDocumentTitle();
       });
       
-      // Update stats every 10 seconds
-      const statsInterval = setInterval(updateStats, 10000);
-      
       // Initial tag extraction and title update
       setTimeout(() => {
         extractTags();
@@ -770,7 +755,6 @@
       }, 1000);
       
       return () => {
-        clearInterval(statsInterval);
         clearTimeout(window.tagExtractionTimeout);
       };
     }
@@ -848,13 +832,7 @@
     // Block sorting complete
   }
 
-  function toggleBlockDebug() {
-    showBlockDebug = !showBlockDebug;
-    if (showBlockDebug) {
-      const blocks = getAllBlocks(editor);
-      blockStats = getBlockStats(blocks);
-    }
-  }
+
 
   function getInitialContent() {
     return {
@@ -1259,7 +1237,7 @@
     };
   }
 
-  // Sync debug flag with global window object
+  // Set debug flag on global window object for TimestampPlugin
   $: if (typeof window !== 'undefined') {
     window.debugNewBlocks = debugNewBlocks;
   }
@@ -1290,15 +1268,6 @@
         </div>
       {/if}
       
-      <!-- Debug Button -->
-      <button
-        on:click={toggleBlockDebug}
-        class="opacity-10 hover:opacity-100 transition-opacity duration-200 bg-white/90 backdrop-blur-md shadow-lg rounded-full px-3 py-1.5 border border-gray-200/50"
-        title="Toggle block debug info"
-      >
-        <div class="text-xs text-gray-600 font-medium">📊 debug</div>
-      </button>
-      
       <!-- Zai with online indicator -->
       <div class="opacity-10 hover:opacity-100 transition-opacity duration-200">
         <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2 flex items-center space-x-2 border border-gray-200/50">
@@ -1315,7 +1284,7 @@
 
 <!-- Fixed top-right floating version tag -->
 <div class="fixed top-4 right-4 bg-accent/10 text-accent px-3 py-1 rounded-full text-sm font-medium z-50 select-none">
-	search-list-context
+	barlow-negative-margin
 </div>
 
 <!-- Editor with internal spacing -->
@@ -1326,6 +1295,15 @@
     tabindex="0"
   />
 </div>
+
+<!-- Empty search placeholder -->
+{#if isSearchEmpty}
+  <div class="max-w-prose mx-auto px-8" style="margin-top: -80vh;">
+    <div class="empty-search-placeholder">
+      nothin. search again?
+    </div>
+  </div>
+{/if}
 
 <!-- Floating Bottom Controls -->
 <div 
@@ -1483,34 +1461,7 @@
   </div>
 </div>
 
-<!-- Block Debug Panel -->
-{#if showBlockDebug}
-  <div class="fixed bottom-20 right-4 max-w-sm bg-white/95 backdrop-blur-md shadow-2xl rounded-lg p-4 border border-gray-200 z-40">
-    <div class="flex items-center justify-between mb-3">
-      <h3 class="text-sm font-semibold text-gray-900">Block Debug Info</h3>
-      <button on:click={() => showBlockDebug = false} class="text-gray-400 hover:text-gray-600">×</button>
-    </div>
-    
-    <div class="space-y-2 text-xs text-gray-600">
-      <div><strong>Total Blocks:</strong> {blockStats.total}</div>
-      <div><strong>With Parents:</strong> {blockStats.withParents}</div>
-      <div><strong>Orphaned:</strong> {blockStats.orphaned}</div>
-      
-      {#if Object.keys(blockStats.byType).length > 0}
-        <div><strong>By Type:</strong></div>
-        {#each Object.entries(blockStats.byType) as [type, count]}
-          <div class="ml-2">• {type}: {count}</div>
-        {/each}
-      {/if}
-      
-      {#if blockStats.timeRange}
-        <div><strong>Time Range:</strong></div>
-        <div class="ml-2">From: {blockStats.timeRange.earliest.toLocaleString()}</div>
-        <div class="ml-2">To: {blockStats.timeRange.latest.toLocaleString()}</div>
-      {/if}
-    </div>
-  </div>
-{/if}
+
 
 <!-- Link Bubble Menu -->
 <div use:mountLinkMenu class="link-bubble-menu">
@@ -1662,13 +1613,13 @@
 <style>
   :global(:root) {
     --debug-borders: none; /* Change to "1px solid red" to show debug borders */
-    --block-borders: 0.5px solid black; /* Change to "1px solid #000" to show block borders */
+    --block-borders: none; /* Change to "1px solid #000" to show block borders */
     --block-hover-bg: none; /* Change to "rgba(0, 0, 0, 0.02)" to show hover background */
   }
 
   :global(.ProseMirror) {
     outline: none;
-    padding: 30vh 1rem 100vh 1rem; /* Half screen top, full screen bottom */
+    padding: 30vh 1rem calc(100vh - 4rem) 1rem;
     line-height: 1.25;
     height: 100%;
     font-family: 'Lora', serif;
@@ -2078,19 +2029,4 @@
   }
 </style>
 
-        <!-- Debug controls for hidden blocks -->
-        {#if dev}
-          <div class="flex flex-col gap-2 p-3 bg-gray-100 border rounded">
-            <div class="text-sm font-medium text-gray-700">Debug Controls</div>
-            
-            <label class="flex items-center gap-2 text-sm">
-              <input type="checkbox" bind:checked={showBlockDebug} class="rounded">
-              Show block debug info
-            </label>
-            
-            <label class="flex items-center gap-2 text-sm">
-              <input type="checkbox" bind:checked={debugNewBlocks} class="rounded">
-              Debug new blocks (blue borders)
-            </label>
-          </div>
-        {/if}
+

@@ -96,6 +96,22 @@
   }
 }
 
+/* Empty search placeholder */
+.empty-search-placeholder {
+  font-family: 'Barlow', sans-serif;
+  font-size: 14px;
+  color: #6b7280; /* gray-500 */
+  text-align: center;
+  margin-left: -2rem; /* Negative margin to align with hidden block lines */
+  margin-right: -2rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .empty-search-placeholder {
+    color: #9ca3af; /* gray-400 for dark mode */
+  }
+}
+
 /* Search highlighting */
 .search-highlight {
   background: rgba(59, 130, 246, 0.2) !important; /* var(--accent-light) with 20% opacity */
