@@ -759,8 +759,8 @@
         const contentHeight = proseMirror.scrollHeight - window.innerHeight;
         const viewportHeight = window.innerHeight;
         
-        // Center the last line of content in the viewport
-        const targetScroll = contentHeight - (viewportHeight / 2);
+        // Position at 1/3 viewport height instead of center
+        const targetScroll = contentHeight - (viewportHeight / 3);
         
         window.scrollTo({ 
           top: Math.max(0, targetScroll), 
@@ -914,7 +914,7 @@
 {#if dev}
   <div class="fixed top-4 right-4 z-[60] pointer-events-none">
     <div class="bg-purple-600/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded shadow-lg font-mono">
-      SERIALIZE-MENTIONS
+      THREE-BLOCK-SEP
     </div>
   </div>
 {/if}
@@ -1558,5 +1558,20 @@
   :global(.ProseMirror ul:not([data-type="taskList"])) {
     list-style-type: disc;
     padding-left: 1.5rem;
+  }
+  
+  /* Horizontal line after 2nd empty paragraph in sequences of 2+ empty paragraphs */
+  :global(.ProseMirror > p:not(:has(> br.ProseMirror-trailingBreak:only-child)) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child)::after,
+         .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child) + 
+         p:has(> br.ProseMirror-trailingBreak:only-child)::after) {
+    content: '';
+    display: block;
+    width: 100%;
+    height: 1px;
+    background: #e5e7eb;
+    margin-top: 3rem;
+    margin-bottom: 1rem;
   }
 </style>
