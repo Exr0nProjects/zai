@@ -1310,12 +1310,10 @@
   </div>
 </div>
 
-<!-- Add version tag in top-right corner -->
-	<div class="fixed top-4 right-4 z-50">
-		<div class="bg-gray-800 text-white text-xs px-2 py-1 rounded-full font-mono">
-			cmd-f-search-shortcut
-		</div>
-	</div>
+<!-- Fixed top-right floating version tag -->
+<div class="fixed top-4 right-4 bg-accent/10 text-accent px-3 py-1 rounded-full text-sm font-medium z-50 select-none">
+	search-simplified
+</div>
 
 <!-- Editor with internal spacing -->
 <div class="bg-white">

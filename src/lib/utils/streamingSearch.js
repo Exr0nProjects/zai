@@ -264,50 +264,19 @@ export class StreamingSearch {
       return blocks;
     }
     
-    if (LOG) console.log('🔍 Starting getAllBlocks() traversal...');
-    let nodeCount = 0;
-    
     this.editor.state.doc.descendants((node, pos) => {
-      nodeCount++;
-      
       // Only collect nodes that have block-level attributes
       if (node.attrs && node.attrs.blockId && node.attrs.createdAt) {
-        // Use serializeToMarkdown for reliable text extraction (same as used elsewhere in app)
-        const nodeText = serializeToMarkdown([node]).trim();
-        
-        const blockInfo = {
+        blocks.push({
           blockId: node.attrs.blockId,
           createdAt: node.attrs.createdAt,
           parentId: node.attrs.parentId,
           nodeType: node.type.name,
           position: pos,
-          content: nodeText || '',
           node: node,
-        };
-        
-        // Log potential duplicate
-        const existingBlock = blocks.find(b => b.blockId === node.attrs.blockId);
-        if (existingBlock) {
-          console.warn('🚨 DUPLICATE blockId detected:', {
-            blockId: node.attrs.blockId,
-            existing: {
-              type: existingBlock.nodeType,
-              pos: existingBlock.position,
-              content: existingBlock.content.substring(0, 50) + '...'
-            },
-            new: {
-              type: node.type.name,
-              pos: pos,
-              content: nodeText.substring(0, 50) + '...'
-            }
-          });
-        }
-        
-        blocks.push(blockInfo);
+        });
       }
     });
-    
-    if (LOG) console.log(`🔍 Traversed ${nodeCount} total nodes, collected ${blocks.length} blocks with blockIds`);
     
     return blocks;
   }
@@ -345,135 +314,67 @@ export class StreamingSearch {
     this.searchAbortController = new AbortController();
 
     try {
-      // Get all blocks
-      const allBlocks = this.getAllBlocks();
-      
-      if (allBlocks.length === 0) {
-        return;
-      }
-
-      // Build hierarchical structure for recursive processing
-      const hierarchy = this.buildHierarchy(allBlocks);
-
       let processedCount = 0;
       let matchedCount = 0;
 
-      const processSubtree = (node, depth = 0) => {
+      // Process document recursively using TipTap's native structure
+      const processNode = (node, pos, depth = 0) => {
         if (depth > 30) { // Prevent runaway recursion
           console.warn('🛑 SEARCH Max depth reached, stopping recursion');
           return;
         }
 
-
         if (this.searchAbortController.signal.aborted) {
           return;
         }
 
-        const subtreeContent = this.getSubtreeContent(node);
-        const subtreeMatches = this.contentMatches(subtreeContent, queryWords);
+        // Only process nodes with blockId (actual blocks)
+        if (node.attrs && node.attrs.blockId) {
+          const nodeContent = this.getNodeContent(node);
+          const nodeMatches = this.contentMatches(nodeContent, queryWords);
 
-        console.log("processing subtree", node.block.blockId, subtreeMatches, subtreeContent);
+          // Check if any descendants match
+          const subtreeMatches = nodeMatches || this.hasMatchingDescendants(node, queryWords);
 
-        if (subtreeMatches) {
-          this.showBlock(node.block.blockId);
-          matchedCount++;
-          if (node.children && node.children.length > 0) {
-            for (const child of node.children) {
-              processSubtree(child, depth + 1);
-            }
+          if (subtreeMatches) {
+            this.showBlock(node.attrs.blockId);
+            matchedCount++;
+            if (LOG) console.log('✅ Block should be visible:', node.attrs.blockId, node.type.name);
+          } else {
+            this.hideBlock(node.attrs.blockId);
+            if (LOG) console.log('🙈 Block should be hidden:', node.attrs.blockId, node.type.name);
           }
-        } else {
-          this.hideSubtree(node);
+
+          processedCount++;
         }
 
-        processedCount++;
-      }
-      
-      // // Process hierarchy recursively with cycle detection
-      // const processedNodes = new Set(); // Track processed nodes to prevent cycles
-      
-      // const processSubtree = (nodes, depth = 0) => {
-      //   if (depth > 30) { // Prevent runaway recursion
-      //     console.warn('🛑 Max depth reached, stopping recursion');
-      //     return;
-      //   }
-        
-      //   for (const node of nodes) {
-      //     if (this.searchAbortController.signal.aborted) {
-      //       break;
-      //     }
-          
-      //     // Prevent cycles - skip if already processed
-      //     if (processedNodes.has(node.block.blockId)) {
-      //       console.log('🔄 Skipping already processed node:', node.block.blockId);
-      //       continue;
-      //     }
-      //     processedNodes.add(node.block.blockId);
+        // Recurse into children with correct position calculation
+        let childPos = pos + 1; // Start after the opening tag of current node
+        node.content.forEach((child, index) => {
+          processNode(child, childPos, depth + 1);
+          childPos += child.nodeSize; // Move position by the size of the child
+        });
+      };
 
-      //     // Check if this subtree contains any matches (including descendants)
-      //     const subtreeContent = this.getSubtreeContent(node);
-      //     const subtreeMatches = this.contentMatches(subtreeContent, queryWords);
-          
-      //     if (subtreeMatches) {
-      //       // Subtree has matches - show this node
-      //       this.showBlock(node.block.blockId);
-      //       matchedCount++;
-      //       console.log('✅ Subtree has matches:', node.block.blockId, node.block.nodeType);
-            
-      //       // Now check individual children  
-      //       if (node.children && node.children.length > 0) {
-      //         for (const child of node.children) {
-      //           // Skip if child already processed
-      //           if (processedNodes.has(child.block.blockId)) {
-      //             continue;
-      //           }
-                
-      //           // Check if this individual child matches
-      //           const childContent = this.getBlockContent(child.block);
-      //           const childMatches = this.contentMatches(childContent, queryWords);
-                
-      //           if (childMatches) {
-      //             // Child matches - show it and recurse
-      //             this.showBlock(child.block.blockId);
-      //             console.log('✅ Child matches:', child.block.blockId, child.block.nodeType);
-                  
-      //             if (child.children && child.children.length > 0) {
-      //               processSubtree([child], depth + 1);
-      //             }
-      //           } else {
-      //             // Child doesn't match - hide entire child subtree
-      //             this.hideSubtree(child);
-      //             console.log('🙈 Child hidden (no match):', child.block.blockId, child.block.nodeType);
-      //           }
-      //         }
-      //       }
-      //     } else {
-      //       // No matches in entire subtree - hide it
-      //       this.hideSubtree(node);
-      //       console.log('🙈 Subtree hidden (no matches):', node.block.blockId, node.block.nodeType);
-      //     }
-          
-      //     processedCount++;
-      //   }
-      // };
-      
-      // Start recursive processing from root nodes
-      for (const rootNode of hierarchy) {
-        processSubtree(rootNode);
-      }
+      // Start processing from document root
+      let rootPos = 0;
+      this.editor.state.doc.content.forEach((child, index) => {
+        processNode(child, rootPos, 0);
+        rootPos += child.nodeSize;
+      });
 
       // Final progress report
       if (onProgress && !this.searchAbortController.signal.aborted) {
         onProgress({
           processed: processedCount,
-          total: allBlocks.length,
+          total: processedCount, // We don't pre-count, so use processed as total
           matched: matchedCount,
           query: query,
           completed: true
         });
       }
 
-      if (LOG) console.log('✅ Search completed - matched:', matchedCount, 'total:', allBlocks.length);
+      if (LOG) console.log('✅ Search completed - matched:', matchedCount, 'total:', processedCount);
 
     } catch (error) {
       console.error('Search error:', error);
@@ -538,78 +439,32 @@ export class StreamingSearch {
     return this.currentQuery;
   }
 
-  // Build hierarchical structure from flat blocks
-  buildHierarchy(blocks) {
-    const blockMap = new Map();
-    const rootNodes = [];
+  // Check if any descendants of a node match the query
+  hasMatchingDescendants(node, queryWords) {
+    let hasMatch = false;
     
-    // Check for duplicate blockIds
-    const seenIds = new Set();
-    const duplicates = [];
-    blocks.forEach(block => {
-      if (seenIds.has(block.blockId)) {
-        duplicates.push(block.blockId);
-      }
-      seenIds.add(block.blockId);
-    });
-    
-    if (duplicates.length > 0) {
-      console.warn('⚠️ Found duplicate blockIds:', duplicates);
-    }
-
-    // First pass: create nodes and map by blockId (use last occurrence for duplicates)
-    blocks.forEach(block => {
-      const node = {
-        block: block,
-        children: []
-      };
-      blockMap.set(block.blockId, node);
-    });
-
-    // Second pass: build parent-child relationships
-    blocks.forEach(block => {
-      const node = blockMap.get(block.blockId);
-      const parentId = block.parentId;
+    node.descendants((descendant) => {
+      if (hasMatch) return false; // Early exit if we found a match
       
-      if (parentId && parentId !== 'none' && blockMap.has(parentId)) {
-        // Has parent - add to parent's children
-        const parent = blockMap.get(parentId);
-        parent.children.push(node);
-      } else {
-        // No parent - is root node
-        rootNodes.push(node);
+      if (descendant.attrs && descendant.attrs.blockId) {
+        const content = this.getNodeContent(descendant);
+        if (this.contentMatches(content, queryWords)) {
+          hasMatch = true;
+          return false; // Stop traversing
+        }
       }
     });
-
-    return rootNodes;
+    
+    return hasMatch;
   }
 
-  // Get content from entire subtree (node + all descendants) with cycle detection
-  getSubtreeContent(node, visited = new Set(), depth = 0) {
-    // Prevent infinite recursion from cycles or excessive depth
-    if (visited.has(node.block.blockId) || depth > 5) {
-      return '';
-    }
-    visited.add(node.block.blockId);
-    
-    let content = this.getBlockContent(node.block);
-    
-    if (node.children && node.children.length > 0) {
-      for (const child of node.children) {
-        content += ' ' + this.getSubtreeContent(child, new Set(visited), depth + 1);
-      }
-    }
-    
-    return content;
-  }
-
-  // Get content from a single block
-  getBlockContent(block) {
+  // Get content from a single node using serializeToMarkdown
+  getNodeContent(node) {
     try {
-      return serializeToMarkdown(block.node, block.node.type.schema);
+      return serializeToMarkdown([node]).trim();
     } catch (error) {
-      console.warn('Failed to serialize block to markdown:', error);
-      return block.node.textContent || '';
+      console.warn('Failed to serialize node to markdown:', error);
+      return node.textContent || '';
     }
   }
 
@@ -617,17 +472,6 @@ export class StreamingSearch {
   contentMatches(content, queryWords) {
     const normalizedContent = content.toLowerCase();
     return queryWords.every(word => normalizedContent.includes(word));
-  }
-
-  // Hide entire subtree
-  hideSubtree(node) {
-    this.hideBlock(node.block.blockId);
-    
-    if (node.children && node.children.length > 0) {
-      for (const child of node.children) {
-        this.hideSubtree(child);
-      }
-    }
   }
 
   // Destroy the search instance
