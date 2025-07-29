@@ -49,7 +49,7 @@
   import { searchHiddenBlocks } from '../lib/stores/searchHidden.js';
   import { SearchHighlightPlugin } from '../lib/tiptap/SearchHighlightPlugin.js';
   import { InlineParser, createParser, PARSERS } from '$lib/tiptap/InlineParser.js';
-  import { HoverStatePlugin } from '$lib/tiptap/HoverStatePlugin.js';
+  import { PatternAnnotationPlugin } from '$lib/tiptap/PatternAnnotationPlugin.js';
   
   // Debug flags (change these in code as needed)
   const debugNewBlocks = false; // Set to true to show blue borders on new blocks
@@ -490,7 +490,7 @@
           placeholder: 'What do you think?',
         }),
         SearchHighlightPlugin,
-        HoverStatePlugin, // General hover state management
+        PatternAnnotationPlugin, // Hover annotations for patterns
         InlineParser.configure({
           enabled: true,
           debugMode: true, // Set to true for debugging
@@ -1328,7 +1328,7 @@
 
 {#if dev}
   <div class="fixed top-4 right-4 z-50 bg-accent-light text-white px-2 py-1 rounded text-xs font-mono pointer-events-none">
-    chrono-date-parsing
+    date-annotations
   </div>
 {/if}
 

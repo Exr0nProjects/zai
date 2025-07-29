@@ -91,7 +91,6 @@ const DateMark = Mark.create({
         'data-pattern-date': '',
         'data-pattern-type': mark.attrs.type,
         'data-pattern-value': mark.attrs.value,
-        'data-hover-target': 'date-pattern',
         ...parsedDateAttr,
         class: `pattern-date pattern-date-${mark.attrs.type}`,
         style: 'position: relative;',
