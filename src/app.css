@@ -90,6 +90,66 @@
   }
 }
 
+/* Hidden blocks system */
+.hidden-block {
+  /* Completely hide the block - no height, no interaction */
+  display: none !important;
+}
+
+/* Visual indicator for hidden block sections */
+/* Target: first hidden block in document OR first hidden block after a visible block */
+.hidden-block:first-child,
+:not(.hidden-block) + .hidden-block {
+  /* Show a placeholder for the first hidden block in each contiguous section */
+  display: block !important;
+  height: 24px !important;
+  margin: 8px 0 !important;
+  padding: 0 !important;
+  position: relative !important;
+  /* Make the content invisible but keep the container for our indicator */
+  color: transparent !important;
+  background: transparent !important;
+  border: none !important;
+  overflow: hidden !important;
+  /* Prevent any interaction */
+  pointer-events: none !important;
+  user-select: none !important;
+}
+
+/* Double horizontal line indicator */
+.hidden-block:first-child::before,
+:not(.hidden-block) + .hidden-block::before {
+  content: "" !important;
+  position: absolute !important;
+  top: 50% !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 2px !important;
+  background: repeating-linear-gradient(
+    to right,
+    #ccc 0px,
+    #ccc 8px,
+    transparent 8px,
+    transparent 16px
+  ) !important;
+  transform: translateY(-50%) !important;
+  z-index: 10 !important;
+}
+
+/* Dark mode version of the indicator */
+@media (prefers-color-scheme: dark) {
+  .hidden-block:first-child::before,
+  :not(.hidden-block) + .hidden-block::before {
+    background: repeating-linear-gradient(
+      to right,
+      #555 0px,
+      #555 8px,
+      transparent 8px,
+      transparent 16px
+    ) !important;
+  }
+}
+
 /* Debug styles for new blocks */
 .debug-new-block {
   border: 1px solid #3b82f6 !important;

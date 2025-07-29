@@ -1312,7 +1312,7 @@
 
 <!-- Fixed top-right floating version tag -->
 <div class="fixed top-4 right-4 bg-accent/10 text-accent px-3 py-1 rounded-full text-sm font-medium z-50 select-none">
-	search-simplified
+	hidden-css-indicators
 </div>
 
 <!-- Editor with internal spacing -->
