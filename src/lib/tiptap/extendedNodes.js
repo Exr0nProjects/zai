@@ -15,6 +15,7 @@ function getBlockAttributes() {
   return {
     blockId: {
       default: null,
+      defining: true, // Prevent inheritance on node split
       renderHTML: (attributes) => ({
         'data-block-id': attributes.blockId,
       }),
@@ -22,6 +23,7 @@ function getBlockAttributes() {
     },
     createdAt: {
       default: null,
+      defining: true, // Prevent inheritance on node split
       renderHTML: (attributes) => ({
         'data-created-at': attributes.createdAt,
       }),
@@ -29,6 +31,7 @@ function getBlockAttributes() {
     },
     parentId: {
       default: null,
+      defining: true, // Prevent inheritance on node split
       renderHTML: (attributes) => ({
         'data-parent-id': attributes.parentId,
       }),
@@ -36,6 +39,7 @@ function getBlockAttributes() {
     },
     debugNew: {
       default: false,
+      defining: true, // Prevent inheritance on node split
       renderHTML: (attributes) => attributes.debugNew ? {
         'class': 'debug-new-block',
       } : {},
@@ -43,6 +47,7 @@ function getBlockAttributes() {
     },
     debugParent: {
       default: false,
+      defining: true, // Prevent inheritance on node split
       renderHTML: (attributes) => attributes.debugParent ? {
         'class': 'debug-new-block-parent',
       } : {},
@@ -56,6 +61,7 @@ function getBlockAttributesConditional() {
   return {
     blockId: {
       default: null,
+      defining: true, // Prevent inheritance on node split
       renderHTML: (attributes) => {
         if (!attributes.blockId) return {};
         return { 'data-block-id': attributes.blockId };
@@ -64,6 +70,7 @@ function getBlockAttributesConditional() {
     },
     createdAt: {
       default: null,
+      defining: true, // Prevent inheritance on node split
       renderHTML: (attributes) => {
         if (!attributes.createdAt) return {};
         return { 'data-created-at': attributes.createdAt };
@@ -72,6 +79,7 @@ function getBlockAttributesConditional() {
     },
     parentId: {
       default: null,
+      defining: true, // Prevent inheritance on node split
       renderHTML: (attributes) => {
         if (!attributes.parentId) return {};
         return { 'data-parent-id': attributes.parentId };
@@ -80,6 +88,7 @@ function getBlockAttributesConditional() {
     },
     debugNew: {
       default: false,
+      defining: true, // Prevent inheritance on node split
       renderHTML: (attributes) => {
         if (!attributes.debugNew) return {};
         return { 'class': 'debug-new-block' };
@@ -88,6 +97,7 @@ function getBlockAttributesConditional() {
     },
     debugParent: {
       default: false,
+      defining: true, // Prevent inheritance on node split
       renderHTML: (attributes) => {
         if (!attributes.debugParent) return {};
         return { 'class': 'debug-new-block-parent' };

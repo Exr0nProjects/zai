@@ -7,7 +7,7 @@ export const BlockInfoDecorator = Extension.create({
 
   addProseMirrorPlugins() {
     // Helper functions outside of the plugin
-    const showBlockTooltip = (event, attrs) => {
+    const showBlockTooltip = (blockElement, attrs) => {
       hideBlockTooltip(); // Remove any existing tooltip
       
       const tooltip = document.createElement('div');
@@ -34,10 +34,11 @@ export const BlockInfoDecorator = Extension.create({
         </div>
       `;
       
-      // Position tooltip in left gutter
+      // Position tooltip aligned with the block element in left gutter
+      const rect = blockElement.getBoundingClientRect();
       tooltip.style.position = 'fixed';
       tooltip.style.left = '10px';
-      tooltip.style.top = `${event.clientY - 30}px`;
+      tooltip.style.top = `${rect.top}px`;
       tooltip.style.zIndex = '1000';
       
       document.body.appendChild(tooltip);
@@ -81,6 +82,9 @@ export const BlockInfoDecorator = Extension.create({
       const hovered = document.querySelectorAll('.debug-hovered');
       hovered.forEach(el => el.classList.remove('debug-hovered'));
     };
+
+    // Track current hovered block to avoid unnecessary tooltip updates
+    let currentHoveredBlock = null;
     
     const getTimeAgo = (date) => {
       const now = new Date();
@@ -146,10 +150,18 @@ export const BlockInfoDecorator = Extension.create({
               if (!target) return false;
               
               const blockId = target.getAttribute('data-block-id');
+              
+              // Only update if target block has changed
+              if (currentHoveredBlock === blockId) {
+                return false;
+              }
+              
               const createdAt = target.getAttribute('data-created-at');
               const parentId = target.getAttribute('data-parent-id');
               
               if (blockId && createdAt) {
+                currentHoveredBlock = blockId;
+                
                 const attrs = {
                   blockId,
                   createdAt: parseInt(createdAt),
@@ -159,7 +171,7 @@ export const BlockInfoDecorator = Extension.create({
                 // Add hover highlight to the main element
                 addHoverHighlight(target);
                 
-                showBlockTooltip(event, attrs);
+                showBlockTooltip(target, attrs);
                 // Highlight parent block if it exists
                 if (attrs.parentId) {
                   highlightParentBlock(attrs.parentId);
@@ -169,6 +181,8 @@ export const BlockInfoDecorator = Extension.create({
             },
             
             mouseout(view, event) {
+              // Reset current hovered block
+              currentHoveredBlock = null;
               hideBlockTooltip();
               clearHoverHighlights();
               clearParentHighlights();
