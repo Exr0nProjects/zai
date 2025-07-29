@@ -1269,7 +1269,7 @@
 <!-- Add version tag in top-right corner -->
 	<div class="fixed top-4 right-4 z-50">
 		<div class="bg-gray-800 text-white text-xs px-2 py-1 rounded-full font-mono">
-			function-scope-fix
+			top-level-sibling-fix
 		</div>
 	</div>
 

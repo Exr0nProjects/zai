@@ -2,23 +2,89 @@ import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { generateBlockId, getCurrentTimestamp } from '../utils/snowflake.js';
 
-// Helper function to find parent blockId
-function getParentId(doc, pos) {
+// Helper function to find parent blockId with temporary ID lookup
+function getParentId(doc, pos, tempIdMap = new Map(), returnSelf = false) {
+  // LLM: find previous sibling, or parent (if none), and use that blockId as oldBlockId 
   try {
     const resolved = doc.resolve(pos);
-    if (resolved.depth > 0) {
-      const parentPos = resolved.before();
-      if (parentPos > 0) {
-        const parentNode = doc.nodeAt(parentPos);
-        if (parentNode && parentNode.attrs && parentNode.attrs.blockId) {
-          return parentNode.attrs.blockId;
-        }
+    
+    // If returnSelf is true and current node has blockId, return it
+    if (returnSelf) {
+      // Check temp map first, then document
+      if (tempIdMap.has(pos)) {
+        const tempId = tempIdMap.get(pos);
+        console.log(`🔗 Returning self blockId from temp map: ${tempId.slice(-8)}`);
+        return tempId;
+      }
+      
+      const currentNode = resolved.nodeAfter || resolved.parent.child(resolved.index());
+      if (currentNode && currentNode.attrs && currentNode.attrs.blockId) {
+        console.log(`🔗 Returning self blockId: ${currentNode.attrs.blockId.slice(-8)}`);
+        return currentNode.attrs.blockId;
       }
     }
+    
+    // While loop to find previous sibling (return the first one you find)
+    const parent = resolved.parent;
+    const index = resolved.index();
+    
+    console.log(`🔍 Looking for previous sibling at pos ${pos}, depth ${resolved.depth}, index ${index}, parent has ${parent.childCount} children`);
+    
+    let siblingIndex = index - 1;
+    while (siblingIndex >= 0) {
+      // Calculate sibling position for temp map lookup
+      let siblingPos = 0;
+      if (resolved.depth > 0) {
+        // For nested nodes, calculate position with parent offset
+        for (let i = 0; i < siblingIndex; i++) {
+          siblingPos += parent.child(i).nodeSize;
+        }
+        siblingPos += resolved.before(resolved.depth) + 1; // Add parent offset
+      } else {
+        // For top-level nodes, position is just sum of previous siblings
+        for (let i = 0; i < siblingIndex; i++) {
+          siblingPos += parent.child(i).nodeSize;
+        }
+        siblingPos += 1; // Add 1 for document start
+      }
+      
+      // Check temp map first
+      if (tempIdMap.has(siblingPos)) {
+        const tempId = tempIdMap.get(siblingPos);
+        console.log(`🔗 Found previous sibling blockId from temp map: ${tempId.slice(-8)} at index ${siblingIndex} (pos ${siblingPos})`);
+        return tempId;
+      }
+      
+      // Then check document
+      const sibling = parent.child(siblingIndex);
+      if (sibling && sibling.attrs && sibling.attrs.blockId) {
+        console.log(`🔗 Found previous sibling blockId: ${sibling.attrs.blockId.slice(-8)} at index ${siblingIndex}`);
+        return sibling.attrs.blockId;
+      }
+      siblingIndex--;
+    }
+    
+    // Special case for top-level nodes: don't try to recurse to parent (doesn't exist)
+    if (resolved.depth === 0) {
+      console.log(`🔗 Top-level node with no previous siblings, returning null`);
+      return null;
+    }
+    
+    // If not found and not at top level, recurse with parent
+    if (resolved.depth > 0) {
+      const parentPos = resolved.before();
+      console.log(`🔗 No sibling found, recursing to parent at pos ${parentPos}`);
+      return getParentId(doc, parentPos, tempIdMap, true);
+    }
+    
+    // If at root, return null
+    console.log(`🔗 Reached root, no blockId found`);
+    return null;
+    
   } catch (e) {
-    // If we can't resolve parent, return null
+    console.warn(`⚠️ Error in getParentId:`, e.message);
+    return null;
   }
-  return null;
 }
 
 export const TimestampPlugin = Extension.create({
@@ -52,10 +118,10 @@ export const TimestampPlugin = Extension.create({
                   pos,
                   node,
                   reason: 'missing-id',
+                  oldBlockId: null, // Will be calculated in second pass with temp map
                   newBlockId: generateBlockId(),
                   newTimestamp: getCurrentTimestamp()
                 });
-                console.log(`✨ Found node without blockId: ${node.type.name} at ${pos}`);
               } else {
                 // Check for duplicate blockIds
                 if (seenBlockIds.has(node.attrs.blockId)) {
@@ -67,7 +133,6 @@ export const TimestampPlugin = Extension.create({
                     newBlockId: generateBlockId(),
                     newTimestamp: getCurrentTimestamp()
                   });
-                  console.log(`🔄 Found DUPLICATE blockId: ${node.attrs.blockId.slice(-8)} on ${node.type.name} at ${pos}`);
                 } else {
                   seenBlockIds.add(node.attrs.blockId);
                 }
@@ -79,23 +144,15 @@ export const TimestampPlugin = Extension.create({
           if (nodesToUpdate.length > 0) {
             tr = newState.tr;
             
+            // Create temporary ID map to track newly assigned IDs within this transaction
+            const tempIdMap = new Map();
+            
             nodesToUpdate.forEach(({ pos, node, reason, oldBlockId, newBlockId, newTimestamp }) => {
-              const parentId = getParentId(newState.doc, pos);
+              // const parentId = oldBlockId || getParentId(newState.doc, pos, tempIdMap);
+              const parentId = getParentId(newState.doc, pos, tempIdMap); // TODO: `paragraph \n - bullet` still paragraph is bullet's sibling, not the listitem?
               
-              if (reason === 'duplicate-id') {
-                console.log(`🆕 REPLACING duplicate blockId:`, {
-                  oldBlockId: oldBlockId.slice(-8),
-                  newBlockId: newBlockId.slice(-8),
-                  nodeType: node.type.name,
-                  pos
-                });
-              } else {
-                console.log(`✨ ASSIGNING new blockId:`, {
-                  newBlockId: newBlockId.slice(-8),
-                  nodeType: node.type.name,
-                  pos
-                });
-              }
+              // Store the new ID in temp map for subsequent lookups
+              tempIdMap.set(pos, newBlockId);
               
               tr.setNodeMarkup(pos, null, {
                 ...node.attrs,
@@ -103,6 +160,13 @@ export const TimestampPlugin = Extension.create({
                 createdAt: newTimestamp,
                 parentId,
                 debugNew: debugMode,
+              });
+              
+              console.log(`🆕 ${reason}: ${node.type.name} at pos ${pos}`, {
+                oldBlockId: oldBlockId?.slice(-8) || 'none',
+                newBlockId: newBlockId.slice(-8),
+                parentId: parentId?.slice(-8) || 'none',
+                timestamp: newTimestamp
               });
             });
           }
