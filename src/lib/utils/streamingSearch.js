@@ -1,7 +1,7 @@
 // Streaming search system for timeline-based document filtering
 // Uses search state store to show/hide blocks based on search query
 
-const LOG = false;
+const LOG = true;
 
 import { serializeToMarkdown } from '../tiptap/MarkdownClipboard.js';
 import { hideBlockInSearch, showBlockInSearch, clearSearchHiding, searchHiddenBlocks } from '../stores/searchHidden.js';
@@ -95,7 +95,6 @@ export class StreamingSearch {
       }
     }
 
-    if (LOG) console.log('🎯 Found center-screen block (avoiding hidden):', closestBlock?.blockId);
     return closestBlock;
   }
 
@@ -334,7 +333,6 @@ export class StreamingSearch {
       const centerBlock = this.findCenterScreenBlock();
       if (centerBlock) {
         this.centerBlockId = centerBlock.blockId;
-        if (LOG) console.log('🎯 Set center block for NEW search (was empty):', this.centerBlockId);
         // Highlight the center block
         this.highlightCenterBlock(this.centerBlockId);
         // Start tracking scroll events to update center block
@@ -349,16 +347,13 @@ export class StreamingSearch {
     try {
       // Get all blocks
       const allBlocks = this.getAllBlocks();
-      if (LOG) console.log('📦 Found blocks:', allBlocks.length);
       
       if (allBlocks.length === 0) {
-        if (LOG) console.log('❌ No blocks found, returning');
         return;
       }
 
       // Build hierarchical structure for recursive processing
       const hierarchy = this.buildHierarchy(allBlocks);
-      if (LOG) console.log('🌳 Built hierarchy with', hierarchy.length, 'root nodes');
 
       let processedCount = 0;
       let matchedCount = 0;
@@ -369,12 +364,15 @@ export class StreamingSearch {
           return;
         }
 
+
         if (this.searchAbortController.signal.aborted) {
           return;
         }
 
         const subtreeContent = this.getSubtreeContent(node);
         const subtreeMatches = this.contentMatches(subtreeContent, queryWords);
+
+        console.log("processing subtree", node.block.blockId, subtreeMatches, subtreeContent);
 
         if (subtreeMatches) {
           this.showBlock(node.block.blockId);

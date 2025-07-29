@@ -2,6 +2,8 @@ import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { generateBlockId, getCurrentTimestamp } from '../utils/snowflake.js';
 
+const LOG = false;
+
 // Helper function to find parent blockId with temporary ID lookup
 function getParentId(doc, pos, tempIdMap = new Map(), returnSelf = false) {
   // LLM: find previous sibling, or parent (if none), and use that blockId as oldBlockId 
@@ -13,13 +15,13 @@ function getParentId(doc, pos, tempIdMap = new Map(), returnSelf = false) {
       // Check temp map first, then document
       if (tempIdMap.has(pos)) {
         const tempId = tempIdMap.get(pos);
-        console.log(`🔗 Returning self blockId from temp map: ${tempId.slice(-8)}`);
+        if (LOG) console.log(`🔗 Returning self blockId from temp map: ${tempId.slice(-8)}`);
         return tempId;
       }
       
       const currentNode = resolved.nodeAfter || resolved.parent.child(resolved.index());
       if (currentNode && currentNode.attrs && currentNode.attrs.blockId) {
-        console.log(`🔗 Returning self blockId: ${currentNode.attrs.blockId.slice(-8)}`);
+        if (LOG) console.log(`🔗 Returning self blockId: ${currentNode.attrs.blockId.slice(-8)}`);
         return currentNode.attrs.blockId;
       }
     }
@@ -28,7 +30,7 @@ function getParentId(doc, pos, tempIdMap = new Map(), returnSelf = false) {
     const parent = resolved.parent;
     const index = resolved.index();
     
-    console.log(`🔍 Looking for previous sibling at pos ${pos}, depth ${resolved.depth}, index ${index}, parent has ${parent.childCount} children`);
+    if (LOG) console.log(`🔍 Looking for previous sibling at pos ${pos}, depth ${resolved.depth}, index ${index}, parent has ${parent.childCount} children`);
     
     let siblingIndex = index - 1;
     while (siblingIndex >= 0) {
@@ -51,14 +53,14 @@ function getParentId(doc, pos, tempIdMap = new Map(), returnSelf = false) {
       // Check temp map first
       if (tempIdMap.has(siblingPos)) {
         const tempId = tempIdMap.get(siblingPos);
-        console.log(`🔗 Found previous sibling blockId from temp map: ${tempId.slice(-8)} at index ${siblingIndex} (pos ${siblingPos})`);
+        if (LOG) console.log(`🔗 Found previous sibling blockId from temp map: ${tempId.slice(-8)} at index ${siblingIndex} (pos ${siblingPos})`);
         return tempId;
       }
       
       // Then check document
       const sibling = parent.child(siblingIndex);
       if (sibling && sibling.attrs && sibling.attrs.blockId) {
-        console.log(`🔗 Found previous sibling blockId: ${sibling.attrs.blockId.slice(-8)} at index ${siblingIndex}`);
+        if (LOG) console.log(`🔗 Found previous sibling blockId: ${sibling.attrs.blockId.slice(-8)} at index ${siblingIndex}`);
         return sibling.attrs.blockId;
       }
       siblingIndex--;
@@ -66,19 +68,19 @@ function getParentId(doc, pos, tempIdMap = new Map(), returnSelf = false) {
     
     // Special case for top-level nodes: don't try to recurse to parent (doesn't exist)
     if (resolved.depth === 0) {
-      console.log(`🔗 Top-level node with no previous siblings, returning null`);
+      if (LOG) console.log(`🔗 Top-level node with no previous siblings, returning null`);
       return null;
     }
     
     // If not found and not at top level, recurse with parent
     if (resolved.depth > 0) {
       const parentPos = resolved.before();
-      console.log(`🔗 No sibling found, recursing to parent at pos ${parentPos}`);
+      if (LOG) console.log(`🔗 No sibling found, recursing to parent at pos ${parentPos}`);
       return getParentId(doc, parentPos, tempIdMap, true);
     }
     
     // If at root, return null
-    console.log(`🔗 Reached root, no blockId found`);
+    if (LOG) console.log(`🔗 Reached root, no blockId found`);
     return null;
     
   } catch (e) {
@@ -162,7 +164,7 @@ export const TimestampPlugin = Extension.create({
                 debugNew: debugMode,
               });
               
-              console.log(`🆕 ${reason}: ${node.type.name} at pos ${pos}`, {
+              if (LOG) console.log(`🆕 ${reason}: ${node.type.name} at pos ${pos}`, {
                 oldBlockId: oldBlockId?.slice(-8) || 'none',
                 newBlockId: newBlockId.slice(-8),
                 parentId: parentId?.slice(-8) || 'none',

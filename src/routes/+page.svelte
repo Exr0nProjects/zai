@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { Editor } from '@tiptap/core';
+  import { Editor, Extension } from '@tiptap/core';
   import Document from '@tiptap/extension-document';
   import Text from '@tiptap/extension-text';
   import {
@@ -141,6 +141,32 @@
     linkMenuElement.className = 'link-bubble-menu';
   }
   
+  // Define focusSearchInput function early for keyboard shortcut
+  function focusSearchInput() {
+    // On mobile, expand search first if not already expanded
+    if (window.innerWidth < 768 && !isSearchExpanded) { // md breakpoint
+      isSearchExpanded = true;
+      // Focus after expansion
+      setTimeout(() => {
+        const mobileInput = document.querySelector('.mobile-search-input');
+        if (mobileInput) {
+          mobileInput.focus();
+          mobileInput.select();
+        }
+      }, 100);
+    } else {
+      // On desktop or when already expanded, focus the appropriate input
+      const desktopInput = document.querySelector('input[placeholder="Search notes..."]:not(.mobile-search-input)');
+      const mobileInput = document.querySelector('.mobile-search-input');
+      
+      const targetInput = mobileInput || desktopInput;
+      if (targetInput) {
+        targetInput.focus();
+        targetInput.select();
+      }
+    }
+  }
+
   // Define addLink function early for keyboard shortcut
   function addLink() {
     if (editor) {
@@ -256,6 +282,21 @@
       };
     },
   });
+
+  // Search keyboard shortcuts extension
+  const SearchKeyboard = Extension.create({
+    name: 'searchKeyboard',
+    
+    addKeyboardShortcuts() {
+      return {
+        'Mod-f': () => {
+          // Focus the search input when Cmd+F is pressed
+          focusSearchInput();
+          return true;
+        },
+      };
+    },
+  });
   
   // Trigger jump behavior when user logs in
   $: if ($user && editor) {
@@ -363,6 +404,9 @@
         
         // Link support
         CustomLink,
+        
+        // Search keyboard shortcuts
+        SearchKeyboard,
         
         // Y.js Collaboration extension (replaces History)
         Collaboration.configure({
@@ -1269,7 +1313,7 @@
 <!-- Add version tag in top-right corner -->
 	<div class="fixed top-4 right-4 z-50">
 		<div class="bg-gray-800 text-white text-xs px-2 py-1 rounded-full font-mono">
-			top-level-sibling-fix
+			cmd-f-search-shortcut
 		</div>
 	</div>
 
