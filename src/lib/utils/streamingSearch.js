@@ -1,12 +1,13 @@
 // Streaming search system for timeline-based document filtering
-// Uses hidden blocks system to show/hide blocks based on search query
+// Uses search state store to show/hide blocks based on search query
 
 import { serializeToMarkdown } from '../tiptap/MarkdownClipboard.js';
+import { hideBlockInSearch, showBlockInSearch, clearSearchHiding, searchHiddenBlocks } from '../stores/searchHidden.js';
+import { get } from 'svelte/store';
 
 export class StreamingSearch {
-  constructor(editor, hiddenBlocksPlugin) {
+  constructor(editor) {
     this.editor = editor;
-    this.hiddenBlocksPlugin = hiddenBlocksPlugin;
     this.isSearching = false;
     this.searchAbortController = null;
     this.currentQuery = '';
@@ -68,8 +69,9 @@ export class StreamingSearch {
     // Find block whose DOM element is closest to viewport center
     for (const block of allBlocks) {
       try {
-        // Skip hidden blocks - don't use them as center reference
-        if (block.node.attrs.hidden) {
+        // Skip search-hidden blocks - don't use them as center reference
+        const hiddenSet = get(searchHiddenBlocks);
+        if (hiddenSet.has(block.blockId)) {
           continue;
         }
 
@@ -90,7 +92,7 @@ export class StreamingSearch {
           
           if (element) {
             // Double-check the element isn't hidden in DOM (additional safety)
-            if (element.hasAttribute('data-hidden') && element.getAttribute('data-hidden') === 'true') {
+            if (element.classList.contains('hidden-block')) {
               continue;
             }
 
@@ -344,64 +346,64 @@ export class StreamingSearch {
         return;
       }
 
-      // Sort blocks by distance from current time (process closest to "now" first)
-      const currentTime = this.getCurrentTimestamp();
-      const sortedBlocks = this.sortBlocksByTimeDistance(allBlocks, currentTime);
+      // Build hierarchical structure for recursive processing
+      const hierarchy = this.buildHierarchy(allBlocks);
+      console.log('🌳 Built hierarchy with', hierarchy.length, 'root nodes');
 
       let processedCount = 0;
       let matchedCount = 0;
       
-      // Process blocks in chunks to avoid blocking UI
-      const chunkSize = 10;
-      for (let i = 0; i < sortedBlocks.length; i += chunkSize) {
-        // Check if search was aborted
-        if (this.searchAbortController.signal.aborted) {
-          console.log('🛑 Search aborted');
-          break;
-        }
-
-        const chunk = sortedBlocks.slice(i, i + chunkSize);
-        
-        // Process chunk - determine desired visibility for each block
-        for (const block of chunk) {
+      // Process hierarchy recursively
+      const processSubtree = (nodes, depth = 0) => {
+        for (const node of nodes) {
           if (this.searchAbortController.signal.aborted) {
             break;
           }
 
-          const shouldBeVisible = this.blockMatches(block, queryWords);
+          // Check if this subtree contains any matches (including descendants)
+          const subtreeContent = this.getSubtreeContent(node);
+          const subtreeMatches = this.contentMatches(subtreeContent, queryWords);
           
-          if (shouldBeVisible) {
-            // Block should be visible - ensure it's shown
-            this.showBlock(block.blockId);
+          if (subtreeMatches) {
+            // Subtree has matches - show this node and recurse into children
+            this.showBlock(node.block.blockId);
             matchedCount++;
-            console.log('✅ Block should be visible:', block.blockId, block.nodeType);
+            console.log('✅ Subtree has matches:', node.block.blockId, node.block.nodeType);
+            
+            // Now check individual children  
+            if (node.children && node.children.length > 0) {
+              for (const child of node.children) {
+                // Check if this individual child matches
+                const childContent = this.getBlockContent(child.block);
+                const childMatches = this.contentMatches(childContent, queryWords);
+                
+                if (childMatches) {
+                  // Child matches - show it and recurse
+                  this.showBlock(child.block.blockId);
+                  console.log('✅ Child matches:', child.block.blockId, child.block.nodeType);
+                  
+                  if (child.children && child.children.length > 0) {
+                    processSubtree([child], depth + 1);
+                  }
+                } else {
+                  // Child doesn't match - hide entire child subtree
+                  this.hideSubtree(child);
+                  console.log('🙈 Child hidden (no match):', child.block.blockId, child.block.nodeType);
+                }
+              }
+            }
           } else {
-            // Block should be hidden - ensure it's hidden
-            this.hideBlock(block.blockId);
-            console.log('🙈 Block should be hidden:', block.blockId, block.nodeType);
+            // No matches in entire subtree - hide it
+            this.hideSubtree(node);
+            console.log('🙈 Subtree hidden (no matches):', node.block.blockId, node.block.nodeType);
           }
           
           processedCount++;
         }
-
-        // Report progress
-        if (onProgress) {
-          onProgress({
-            processed: processedCount,
-            total: sortedBlocks.length,
-            matched: matchedCount,
-            query: query
-          });
-        }
-
-        // Auto-scroll to keep center block in view after each chunk
-        if (this.centerBlockId && !this.searchAbortController.signal.aborted) {
-          this.scrollToKeepBlockCentered(this.centerBlockId);
-        }
-
-        // Yield control to prevent blocking UI
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
+      };
+      
+      // Start recursive processing from root
+      processSubtree(hierarchy);
 
       // Final progress report
       if (onProgress && !this.searchAbortController.signal.aborted) {
@@ -425,29 +427,20 @@ export class StreamingSearch {
     }
   }
 
-  // Hide a specific block
+  // Hide a specific block during search
   hideBlock(blockId) {
-    if (this.editor && this.editor.commands) {
-      this.editor.commands.hideBlock(blockId);
-    }
+    hideBlockInSearch(blockId);
   }
 
-  // Show a specific block
+  // Show a specific block during search
   showBlock(blockId) {
-    if (this.editor && this.editor.commands) {
-      this.editor.commands.showBlock(blockId);
-    }
+    showBlockInSearch(blockId);
   }
 
   // Show all blocks (used when clearing search)
   showAllBlocks() {
     console.log('👁️ StreamingSearch.showAllBlocks called');
-    
-    if (this.editor && this.editor.commands) {
-      const result = this.editor.commands.showAllBlocks();
-      console.log('👁️ showAllBlocks command result:', result);
-    }
-    
+    clearSearchHiding();
     console.log('✅ All blocks should now be visible');
   }
 

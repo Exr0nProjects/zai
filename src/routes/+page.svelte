@@ -69,7 +69,7 @@
   let keyboardHeight = 0;
   
   // Hidden blocks debug state
-  let isHidingAlternateBlocks = false;
+
   
   // Link management
   let linkMenuElement;
@@ -91,22 +91,7 @@
   }
   
   // Toggle hiding alternate blocks for testing
-  function toggleHideAlternateBlocks() {
-    if (!editor) return;
-    
-    if (isHidingAlternateBlocks) {
-      editor.commands.showAllBlocks();
-      isHidingAlternateBlocks = false;
-    } else {
-      const blocks = getAllBlocks(editor);
-      blocks.forEach((block, index) => {
-        if (index % 2 === 1) {
-          editor.commands.hideBlock(block.blockId);
-        }
-      });
-      isHidingAlternateBlocks = true;
-    }
-  }
+
 
   // Get current link URL from DOM
   function getCurrentLinkUrl() {
@@ -462,10 +447,120 @@
       // No initial content - Y.js will manage document state
     });
 
-    // Initialize streaming search immediately after editor creation
-    console.log('🔍 Initializing streaming search...');
-    streamingSearch = new StreamingSearch(editor, HiddenBlocksPlugin);
-    console.log('✅ Streaming search initialized:', streamingSearch);
+          // Set editor reference for search store and add debug functions to global scope
+      import('../lib/stores/searchHidden.js').then(({ setEditorRef, debugSearchStore, debugEditorRef }) => {
+        setEditorRef(editor);
+        
+        // Add debug functions to global scope for console access
+        window.debugSearchStore = debugSearchStore;
+        window.debugEditorRef = debugEditorRef;
+        
+        // Add TipTap debug functions
+        window.debugTipTapTree = () => {
+          console.log('🌳 TipTap Document Tree:');
+          console.log('  Document JSON:', editor.getJSON());
+          
+          console.log('\n📍 All blocks with blockId:');
+          const blocks = [];
+          editor.state.doc.descendants((node, pos) => {
+            if (node.attrs && node.attrs.blockId) {
+              blocks.push({
+                blockId: node.attrs.blockId,
+                type: node.type.name,
+                pos: pos,
+                content: node.textContent || '[empty]',
+                attrs: node.attrs
+              });
+            }
+          });
+          blocks.forEach(block => {
+            console.log(`  ${block.type}[${block.blockId}] @${block.pos}: "${block.content.substring(0, 30)}..."`);
+          });
+          return blocks;
+        };
+        
+        // Add DOM debug functions  
+        window.debugDOMClasses = () => {
+          console.log('🏷️ DOM Elements with .hidden-block class:');
+          const hiddenElements = document.querySelectorAll('.hidden-block');
+          console.log(`  Found ${hiddenElements.length} elements with .hidden-block class`);
+          
+          hiddenElements.forEach((el, index) => {
+            const blockId = el.getAttribute('data-block-id');
+            const nodeType = el.tagName.toLowerCase();
+            const content = el.textContent || '[empty]';
+            console.log(`  ${index + 1}. ${nodeType}[${blockId}]: "${content.substring(0, 30)}..."`);
+          });
+          return hiddenElements;
+        };
+        
+        window.debugDOMSearch = (blockId) => {
+          console.log(`🔎 Searching DOM for blockId: ${blockId}`);
+          const elements = document.querySelectorAll(`[data-block-id="${blockId}"]`);
+          console.log(`  Found ${elements.length} elements with this blockId:`);
+          
+          elements.forEach((el, index) => {
+            console.log(`  ${index + 1}. ${el.tagName.toLowerCase()}`);
+            console.log(`    Classes: ${el.className}`);
+            console.log(`    Has .hidden-block: ${el.classList.contains('hidden-block')}`);
+            console.log(`    Content: "${el.textContent.substring(0, 50)}..."`);
+          });
+          return elements;
+        };
+        
+        // Test functions for manual hiding
+        window.testHideBlock = async (blockId) => {
+          const { hideBlockInSearch } = await import('../lib/stores/searchHidden.js');
+          console.log(`🙈 Manually hiding block: ${blockId}`);
+          hideBlockInSearch(blockId);
+          
+          // Check results
+          setTimeout(() => {
+            console.log('After hiding:');
+            window.debugSearchStore();
+            window.debugDOMSearch(blockId);
+          }, 100);
+        };
+        
+        window.testClearHiding = async () => {
+          const { clearSearchHiding } = await import('../lib/stores/searchHidden.js');
+          console.log('👁️ Clearing all hiding');
+          clearSearchHiding();
+          
+          setTimeout(() => {
+            console.log('After clearing:');
+            window.debugSearchStore();
+            window.debugDOMClasses();
+          }, 100);
+        };
+        
+        // Check decorations
+        window.debugDecorations = () => {
+          console.log('🎨 Current Editor Decorations:');
+          if (editor.view && editor.view.decorations) {
+            console.log('  Decorations exist:', !!editor.view.decorations);
+            console.log('  Decorations object:', editor.view.decorations);
+          } else {
+            console.log('  No decorations found');
+          }
+          return editor.view?.decorations;
+        };
+        
+        console.log('🛠️ Debug functions added to window:');
+        console.log('  window.debugSearchStore() - Check search store state');
+        console.log('  window.debugEditorRef() - Check editor reference');
+        console.log('  window.debugTipTapTree() - Check TipTap document structure');
+        console.log('  window.debugDOMClasses() - Check DOM elements with .hidden-block');
+        console.log('  window.debugDOMSearch(blockId) - Search DOM for specific block');
+        console.log('  window.debugDecorations() - Check editor decorations');
+        console.log('  window.testHideBlock(blockId) - Manually hide a block');
+        console.log('  window.testClearHiding() - Clear all hiding');
+      });
+
+      // Initialize streaming search immediately after editor creation
+      console.log('🔍 Initializing streaming search...');
+      streamingSearch = new StreamingSearch(editor);
+      console.log('✅ Streaming search initialized:', streamingSearch);
 
     // Add link interaction handlers after editor is created
     setTimeout(() => {
@@ -1074,7 +1169,7 @@
 {#if dev}
   <div class="fixed top-12 right-4 z-[60] pointer-events-none">
     <div class="bg-purple-600/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded shadow-lg font-mono">
-              transaction-state-fix
+              debug-tools-ready
     </div>
   </div>
 {/if}
@@ -1104,17 +1199,6 @@
         </div>
       {/if}
       
-      <!-- Hidden Blocks Toggle Button -->
-      <button
-        on:click={toggleHideAlternateBlocks}
-        class={`opacity-20 hover:opacity-100 transition-opacity duration-200 backdrop-blur-md shadow-lg rounded-full p-2 ${isHidingAlternateBlocks ? 'bg-red-100' : 'bg-white/90'}`}
-        title={isHidingAlternateBlocks ? "Show All Blocks" : "Hide Alternate Blocks"}
-      >
-        <div class="text-xs">
-          {isHidingAlternateBlocks ? '👁️‍🗨️' : '🫥'}
-        </div>
-      </button>
-
       <!-- Debug Button -->
       <button
         on:click={toggleBlockDebug}

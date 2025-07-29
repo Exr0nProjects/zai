@@ -1,8 +1,28 @@
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Extension } from '@tiptap/core';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { get } from 'svelte/store';
+import { searchHiddenBlocks } from '../stores/searchHidden.js';
 
 const HiddenBlocksPluginKey = new PluginKey('hiddenBlocks');
+
+// Helper function to check if a block is hidden during search
+function isBlockHidden(blockId) {
+  const hiddenSet = get(searchHiddenBlocks);
+  return hiddenSet.has(blockId);
+}
+
+// Helper function to find block ID from a position
+function getBlockIdFromPos(doc, pos) {
+  const $pos = doc.resolve(pos);
+  for (let depth = $pos.depth; depth >= 0; depth--) {
+    const node = $pos.node(depth);
+    if (node.attrs && node.attrs.blockId) {
+      return node.attrs.blockId;
+    }
+  }
+  return null;
+}
 
 // Helper function to skip hidden blocks during navigation
 function skipHiddenBlocks(editor, direction) {
@@ -10,15 +30,15 @@ function skipHiddenBlocks(editor, direction) {
   const { selection, doc } = state;
   const { $from } = selection;
   
-  // Get the current block
-  const currentBlock = $from.node($from.depth);
+  // Get the current block ID
+  const currentBlockId = getBlockIdFromPos(doc, $from.pos);
   
   // Only handle if current block is actually hidden
-  if (currentBlock.attrs && currentBlock.attrs.hidden) {
+  if (currentBlockId && isBlockHidden(currentBlockId)) {
     let targetPos = null;
     
     doc.descendants((node, pos) => {
-      if (!node.attrs.hidden && node.attrs.blockId && pos !== $from.pos) {
+      if (node.attrs && node.attrs.blockId && !isBlockHidden(node.attrs.blockId) && pos !== $from.pos) {
         if (direction === 'up' || direction === 'left') {
           if (pos < $from.pos) {
             targetPos = pos + 1; // Position cursor at start of block
@@ -52,8 +72,8 @@ function preventHiddenBlockDeletion(editor, direction) {
     let checkPos = direction === 'backward' ? resolvedPos.pos - 1 : resolvedPos.pos + 1;
     
     if (checkPos >= 0 && checkPos < doc.content.size) {
-      const targetNode = doc.nodeAt(checkPos);
-      if (targetNode && targetNode.attrs && targetNode.attrs.hidden) {
+      const blockId = getBlockIdFromPos(doc, checkPos);
+      if (blockId && isBlockHidden(blockId)) {
         return true; // Prevent deletion
       }
     }
@@ -61,7 +81,7 @@ function preventHiddenBlockDeletion(editor, direction) {
     // Check if selection includes hidden blocks
     let hasHiddenInSelection = false;
     doc.nodesBetween($from.pos, $to.pos, (node) => {
-      if (node.attrs && node.attrs.hidden) {
+      if (node.attrs && node.attrs.blockId && isBlockHidden(node.attrs.blockId)) {
         hasHiddenInSelection = true;
         return false; // Stop searching
       }
@@ -76,186 +96,6 @@ function preventHiddenBlockDeletion(editor, direction) {
 
 export const HiddenBlocksPlugin = Extension.create({
   name: 'hiddenBlocks',
-
-  addGlobalAttributes() {
-    return [
-      {
-        types: [
-          'paragraph', 'heading', 'bulletList', 'taskList', 'orderedList', 
-          'listItem', 'taskItem', 'blockquote', 'codeBlock', 'horizontalRule'
-        ],
-        attributes: {
-          hidden: {
-            default: false,
-            renderHTML: attributes => attributes.hidden ? { 'data-hidden': 'true' } : {},
-            parseHTML: element => element.getAttribute('data-hidden') === 'true',
-          },
-        },
-      },
-    ];
-  },
-
-  addCommands() {
-    return {
-      hideBlock: (blockId) => ({ tr, dispatch }) => {
-        if (!dispatch) return false;
-        
-        const { doc } = tr;
-        let found = false;
-        const hiddenInThisTransaction = new Set(); // Track blocks hidden in this transaction
-        
-        doc.descendants((node, pos) => {
-          if (node.attrs.blockId === blockId) {
-            // Hide the target node
-            const nodeContent = node.textContent || `[${node.type.name}]`;
-            console.log('🙈 Hiding block:', blockId, nodeContent.substring(0, 50) + (nodeContent.length > 50 ? '...' : ''));
-            tr.setNodeMarkup(pos, undefined, { ...node.attrs, hidden: true });
-            hiddenInThisTransaction.add(blockId);
-            found = true;
-            
-            // Check if parent nodes should also be hidden
-            const $pos = doc.resolve(pos);
-            for (let depth = $pos.depth - 1; depth >= 0; depth--) {
-              const parentNode = $pos.node(depth);
-              const parentPos = $pos.start(depth) - 1;
-              
-              // Only consider block-level parents that have blockId
-              if (parentNode.attrs && parentNode.attrs.blockId) {
-                const parentContent = parentNode.textContent || `[${parentNode.type.name}]`;
-                console.log(`🔍 Checking parent at depth ${depth}:`, parentNode.attrs.blockId, parentNode.type.name, parentContent.substring(0, 30) + '...');
-                
-                // Check if all direct children with blockId are now hidden (including those hidden in this transaction)
-                let allChildrenHidden = true;
-                let hasChildrenWithBlockId = false;
-                let visibleChildren = [];
-                
-                // Check direct children only (not all descendants)
-                for (let i = 0; i < parentNode.childCount; i++) {
-                  const child = parentNode.child(i);
-                  if (child.attrs && child.attrs.blockId) {
-                    hasChildrenWithBlockId = true;
-                    const childContent = child.textContent || `[${child.type.name}]`;
-                    
-                    // Check if child is hidden in original doc OR in this transaction
-                    const isChildHidden = child.attrs.hidden || hiddenInThisTransaction.has(child.attrs.blockId);
-                    
-                    if (!isChildHidden) {
-                      allChildrenHidden = false;
-                      visibleChildren.push({
-                        id: child.attrs.blockId,
-                        type: child.type.name,
-                        content: childContent.substring(0, 30) + (childContent.length > 30 ? '...' : '')
-                      });
-                    }
-                  }
-                }
-                
-                console.log(`   📊 Children analysis: hasChildren=${hasChildrenWithBlockId}, allHidden=${allChildrenHidden}, visibleCount=${visibleChildren.length}`);
-                if (visibleChildren.length > 0) {
-                  console.log('   👁️ Visible children preventing hiding:', visibleChildren);
-                }
-                
-                // Only hide parent if it has children with blockId and all are hidden
-                if (hasChildrenWithBlockId && allChildrenHidden && !parentNode.attrs.hidden && !hiddenInThisTransaction.has(parentNode.attrs.blockId)) {
-                  console.log('🔄 Hiding parent node:', parentNode.attrs.blockId, parentNode.type.name, 'at pos:', parentPos);
-                  tr.setNodeMarkup(parentPos, undefined, { ...parentNode.attrs, hidden: true });
-                  hiddenInThisTransaction.add(parentNode.attrs.blockId);
-                } else if (hasChildrenWithBlockId && !allChildrenHidden) {
-                  console.log('🚫 NOT hiding parent - has visible children:', parentNode.attrs.blockId, parentNode.type.name);
-                }
-              }
-            }
-            
-            return false; // Stop traversing
-          }
-        });
-        
-        return found;
-      },
-      
-      showBlock: (blockId) => ({ tr, dispatch }) => {
-        if (!dispatch) return false;
-        
-        const { doc } = tr;
-        let found = false;
-        
-        doc.descendants((node, pos) => {
-          if (node.attrs.blockId === blockId) {
-            // Show the target node
-            tr.setNodeMarkup(pos, undefined, { ...node.attrs, hidden: false });
-            found = true;
-            
-            // Show any parent nodes that were hidden (since they now have visible content)
-            const $pos = doc.resolve(pos);
-            for (let depth = $pos.depth - 1; depth >= 0; depth--) {
-              const parentNode = $pos.node(depth);
-              const parentPos = $pos.start(depth) - 1;
-              
-              // Only consider block-level parents that have blockId and are currently hidden
-              if (parentNode.attrs && parentNode.attrs.blockId && parentNode.attrs.hidden) {
-                console.log('🔄 Showing parent node:', parentNode.attrs.blockId, 'at pos:', parentPos);
-                tr.setNodeMarkup(parentPos, undefined, { ...parentNode.attrs, hidden: false });
-              }
-            }
-            
-            return false; // Stop traversing
-          }
-        });
-        
-        return found;
-      },
-      
-      toggleBlockVisibility: (blockId) => ({ tr, dispatch, state }) => {
-        if (!dispatch) return false;
-        
-        const { doc } = tr;
-        let found = false;
-        
-        doc.descendants((node, pos) => {
-          if (node.attrs.blockId === blockId) {
-            const isHidden = node.attrs.hidden;
-            tr.setNodeMarkup(pos, undefined, { ...node.attrs, hidden: !isHidden });
-            found = true;
-            return false; // Stop traversing
-          }
-        });
-        
-        return found;
-      },
-      
-      hideAllBlocks: () => ({ tr, dispatch }) => {
-        if (!dispatch) return false;
-        
-        const { doc } = tr;
-        let modified = false;
-        
-        doc.descendants((node, pos) => {
-          if (node.attrs.blockId && !node.attrs.hidden) {
-            tr.setNodeMarkup(pos, undefined, { ...node.attrs, hidden: true });
-            modified = true;
-          }
-        });
-        
-        return modified;
-      },
-      
-      showAllBlocks: () => ({ tr, dispatch }) => {
-        if (!dispatch) return false;
-        
-        const { doc } = tr;
-        let modified = false;
-        
-        doc.descendants((node, pos) => {
-          if (node.attrs.blockId && node.attrs.hidden) {
-            tr.setNodeMarkup(pos, undefined, { ...node.attrs, hidden: false });
-            modified = true;
-          }
-        });
-        
-        return modified;
-      },
-    };
-  },
 
   addKeyboardShortcuts() {
     return {
@@ -286,12 +126,14 @@ export const HiddenBlocksPlugin = Extension.create({
         key: HiddenBlocksPluginKey,
         
         props: {
+          // Apply decorations based on search store
           decorations: (state) => {
             const decorations = [];
             const { doc } = state;
+            const hiddenSet = get(searchHiddenBlocks);
             
             doc.descendants((node, pos) => {
-              if (node.attrs.hidden) {
+              if (node.attrs && node.attrs.blockId && hiddenSet.has(node.attrs.blockId)) {
                 decorations.push(
                   Decoration.node(pos, pos + node.nodeSize, {
                     class: 'hidden-block',
@@ -305,18 +147,11 @@ export const HiddenBlocksPlugin = Extension.create({
           
           // Prevent selection of hidden blocks
           handleClick: (view, pos, event) => {
-            const { doc } = view.state;
-            const resolvedPos = doc.resolve(pos);
-            
-            // Check if click is within a hidden block
-            for (let depth = resolvedPos.depth; depth >= 0; depth--) {
-              const node = resolvedPos.node(depth);
-              if (node.attrs.hidden) {
-                event.preventDefault();
-                return true; // Handled
-              }
+            const blockId = getBlockIdFromPos(view.state.doc, pos);
+            if (blockId && isBlockHidden(blockId)) {
+              event.preventDefault();
+              return true; // Handled
             }
-            
             return false; // Not handled
           },
           
@@ -329,8 +164,8 @@ export const HiddenBlocksPlugin = Extension.create({
                 const startContainer = range.startContainer;
                 const endContainer = range.endContainer;
                 
-                // Check if selection includes hidden blocks
-                const hiddenElements = view.dom.querySelectorAll('[data-hidden="true"]');
+                // Check if selection includes hidden blocks by checking CSS class
+                const hiddenElements = view.dom.querySelectorAll('.hidden-block');
                 for (const hiddenEl of hiddenElements) {
                   if (hiddenEl.contains(startContainer) || hiddenEl.contains(endContainer)) {
                     event.preventDefault();
