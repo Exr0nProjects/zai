@@ -2,7 +2,7 @@ import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from 'prosemirror-state';
 
 // Markdown serializer function outside the extension
-const serializeToMarkdown = (content) => {
+export const serializeToMarkdown = (content) => {
   let markdown = '';
   
   const processNode = (node, depth = 0) => {

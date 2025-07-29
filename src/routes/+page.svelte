@@ -29,7 +29,7 @@
   import { ExtendedTaskItem } from '$lib/tiptap/ExtendedTaskItem.js';
   import { BlockInfoDecorator } from '$lib/tiptap/BlockInfoDecorator.js';
   import { TimestampPlugin } from '$lib/tiptap/TimestampPlugin.js';
-  import { MarkdownClipboard } from '$lib/tiptap/MarkdownClipboard.js';
+  import { MarkdownClipboard, serializeToMarkdown } from '$lib/tiptap/MarkdownClipboard.js';
   import { MarkdownPaste } from '$lib/tiptap/MarkdownPaste.js';
   import ListKeymap from '@tiptap/extension-list-keymap';
   import Link from '@tiptap/extension-link';
@@ -537,16 +537,25 @@
       // Update stats on editor changes
       editor.on('update', () => {
         updateStats();
+        updateDocumentTitle();
         // Debounce tag extraction to avoid excessive processing
         clearTimeout(window.tagExtractionTimeout);
         window.tagExtractionTimeout = setTimeout(extractTags, 2000);
       });
       
+      // Update title on cursor movement
+      editor.on('selectionUpdate', () => {
+        updateDocumentTitle();
+      });
+      
       // Update stats every 10 seconds
       const statsInterval = setInterval(updateStats, 10000);
       
-      // Initial tag extraction
-      setTimeout(extractTags, 1000);
+      // Initial tag extraction and title update
+      setTimeout(() => {
+        extractTags();
+        updateDocumentTitle();
+      }, 1000);
       
       return () => {
         clearInterval(statsInterval);
@@ -667,6 +676,118 @@
     });
     
     timelinePosition = timelinePos;
+  }
+  
+  function updateDocumentTitle() {
+    if (!editor) return;
+    
+    try {
+      const { doc, selection } = editor.state;
+      const cursorPos = selection.from;
+      
+      // Find the first non-empty line in the current section
+      const firstLineText = findCurrentSectionFirstLine(doc, cursorPos);
+      
+      if (firstLineText) {
+        // Truncate to reasonable length for title
+        const truncated = firstLineText.length > 50 ? firstLineText.slice(0, 50) + '...' : firstLineText;
+        document.title = `zai - ${truncated}`;
+      } else {
+        document.title = 'zai';
+      }
+    } catch (error) {
+      console.warn('Failed to update document title:', error);
+      document.title = 'zai';
+    }
+  }
+  
+  function findCurrentSectionFirstLine(doc, cursorPos) {
+    // Efficient approach: start from cursor position and work backwards
+    let nodePositions = [];
+    
+    // Build node position map
+    let pos = 0;
+    doc.content.forEach((node, index) => {
+      nodePositions.push({ node, pos, index });
+      pos += node.nodeSize;
+    });
+    
+    console.log('Title debug - cursor at:', cursorPos, 'total nodes:', nodePositions.length);
+    
+    if (nodePositions.length === 0) return null;
+    
+    // Find current node (binary search would be even better for huge docs)
+    let currentNodeIndex = nodePositions.length - 1;
+    for (let i = 0; i < nodePositions.length; i++) {
+      const next = nodePositions[i + 1];
+      if (nodePositions[i].pos <= cursorPos && (!next || next.pos > cursorPos)) {
+        currentNodeIndex = i;
+        break;
+      }
+    }
+    
+    console.log('Title debug - current node index:', currentNodeIndex);
+    
+    // Check if cursor is on an empty line - if so, start from the line above
+    let startIndex = currentNodeIndex;
+    const currentNodeData = nodePositions[currentNodeIndex];
+    const currentText = serializeToMarkdown([currentNodeData.node]).trim();
+    const currentIsEmpty = currentText === '';
+    
+    if (currentIsEmpty) {
+      startIndex = currentNodeIndex - 1;
+      console.log('Title debug - cursor on empty line, starting search from index:', startIndex);
+    }
+    
+    // Work backwards from start position to find section boundary
+    let emptyCount = 0;
+    let foundSectionBoundary = false;
+    let actualSectionStartIndex = null;
+    
+    for (let i = startIndex; i >= 0; i--) {
+      const nodeData = nodePositions[i];
+      const text = serializeToMarkdown([nodeData.node]).trim();
+      const isEmpty = text === '';
+      
+      console.log('Title debug - checking node', i, 'isEmpty:', isEmpty, 'text:', text.slice(0, 20));
+      
+      if (isEmpty) {
+        emptyCount++;
+      } else {
+        // Found non-empty node
+        if (emptyCount >= 2) {
+          // We found 2+ empty lines above this non-empty node (end of previous section)
+          console.log('Title debug - found section boundary at index:', i, 'after', emptyCount, 'empty lines');
+          foundSectionBoundary = true;
+          
+          // Now go forward to find the actual start of current section (after the empty lines)
+          for (let j = i + 1; j <= currentNodeIndex; j++) {
+            const nextNodeData = nodePositions[j];
+            const nextText = serializeToMarkdown([nextNodeData.node]).trim();
+            
+            if (nextText !== '') {
+              actualSectionStartIndex = j;
+              console.log('Title debug - actual section starts at index:', j);
+              break;
+            }
+          }
+          break;
+        }
+        emptyCount = 0; // Reset count
+      }
+    }
+    
+    // If no section with 2+ empty lines above, don't show title
+    if (!foundSectionBoundary || actualSectionStartIndex === null) {
+      console.log('Title debug - no valid section found');
+      return null;
+    }
+    
+    // Return the first line of the current section
+    const nodeData = nodePositions[actualSectionStartIndex];
+    const text = serializeToMarkdown([nodeData.node]).trim();
+    console.log('Title debug - returning first line of current section:', text);
+    return text;
   }
   
   function handleSearch() {
@@ -914,7 +1035,7 @@
 {#if dev}
   <div class="fixed top-4 right-4 z-[60] pointer-events-none">
     <div class="bg-purple-600/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded shadow-lg font-mono">
-      PILL-LOGIN-PIN
+      IGNORE-CURSOR-EMPTY
     </div>
   </div>
 {/if}
