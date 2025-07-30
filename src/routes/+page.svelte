@@ -1408,7 +1408,7 @@
         <div class="md:flex-1 md:max-w-md md:relative">
           <!-- Desktop Search Box -->
           <div class="hidden w-full md:flex justify-center">
-            <div class="bg-white/90 w-full backdrop-blur-md shadow-lg rounded-full border border-[var(--border)] flex items-center divide-x divide-[var(--border)]" style="height: 40px;">
+            <div class="pill bg-white/90 w-full backdrop-blur-md flex items-center divide-x divide-[var(--border)]" style="height: 40px;">
               <input
                 type="text"
                 bind:value={searchQuery}
