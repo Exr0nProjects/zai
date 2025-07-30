@@ -1319,9 +1319,10 @@
           <input
             type="text"
             bind:value={searchQuery}
-            placeholder="Search notes..."
-            class="mobile-search-input w-full bg-white/90 backdrop-blur-md shadow-lg rounded-full pl-4 pr-10 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all border border-gray-200"
+            placeholder={isSearchExpanded ? "save" : "search"}
+            class="mobile-search-input w-full bg-white/90 backdrop-blur-md shadow-lg rounded-full pl-4 pr-10 py-3 text-sm focus:outline-none focus:bg-white transition-all border border-gray-200"
             on:keypress={(e) => e.key === 'Enter' && handleSearch()}
+            on:focus={() => {/* placeholder will show 'save' when expanded */}}
             on:blur={() => isSearchExpanded = false}
           />
           {#if searchQuery && !searchProgress.completed && searchProgress.total > 0}
@@ -1334,7 +1335,7 @@
             class="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-500 hover:text-blue-600 transition-colors"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
             </svg>
           </button>
         </div>
@@ -1358,9 +1359,9 @@
           <input
             type="text"
             bind:value={searchQuery}
-            placeholder="Search notes..."
+            placeholder="filter"
             tabindex="-1"
-            class="hidden md:block w-full bg-white/90 backdrop-blur-md shadow-lg rounded-full pl-4 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all border border-gray-200"
+            class="hidden md:block w-full bg-white/90 backdrop-blur-md shadow-lg rounded-full pl-4 pr-10 py-3 text-sm focus:outline-none focus:bg-white transition-all border border-gray-200"
             on:keypress={(e) => e.key === 'Enter' && handleSearch()}
           />
           {#if searchQuery && !searchProgress.completed && searchProgress.total > 0}
@@ -1373,7 +1374,7 @@
             class="hidden md:block absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-500 hover:text-blue-600 transition-colors"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
             </svg>
           </button>
           
@@ -1425,7 +1426,8 @@
             title="Add Todo List"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 12 2 2 4-4"/>
             </svg>
           </button>
           
