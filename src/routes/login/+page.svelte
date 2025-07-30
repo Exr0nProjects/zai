@@ -167,20 +167,20 @@
           </div>
         {:else}
           <!-- OTP pill layout -->
-          <div class="flex items-center justify-center">
-            <!-- OTP pill container with back button inside -->
+          <div class="flex items-center justify-center space-x-3">
+            <!-- Floating back button -->
+            <button
+              type="button"
+              on:click={resetForm}
+              class="bg-white/90 backdrop-blur-md shadow-lg rounded-full border border-gray-200 p-3 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+              </svg>
+            </button>
+            
+            <!-- Centered OTP pill container -->
             <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full border border-gray-200 flex items-center divide-x divide-gray-200" style="height: 40px;">
-              <!-- Back button -->
-              <button
-                type="button"
-                on:click={resetForm}
-                class="px-3 h-full text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors rounded-l-full flex items-center"
-              >
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-                </svg>
-              </button>
-              
               <!-- OTP Input -->
               <input
                 bind:this={otpInput}
@@ -192,7 +192,7 @@
                 placeholder="code?"
                 required
                 maxlength="6"
-                class="w-24 h-full px-3 text-sm bg-transparent border-none outline-none focus:ring-0 text-center tracking-wider"
+                class="w-24 h-full px-3 text-sm bg-transparent border-none outline-none focus:ring-0 text-center tracking-wider rounded-l-full"
                 autocomplete="one-time-code"
               />
               
