@@ -1363,33 +1363,35 @@
     {#if isSearchExpanded}
       <div class="flex items-center space-x-3 justify-center">
         <div class="flex-1 max-w-md relative">
-          <input
-            type="text"
-            bind:value={searchQuery}
-            placeholder={isSearchExpanded ? "save" : "search"}
-            class="mobile-search-input w-full bg-white/90 backdrop-blur-md shadow-lg rounded-full pl-4 pr-10 py-3 text-sm focus:outline-none focus:bg-white transition-all border border-gray-200"
-            on:keypress={(e) => e.key === 'Enter' && handleSearch()}
-            on:focus={() => {/* placeholder will show 'save' when expanded */}}
-            on:blur={() => isSearchExpanded = false}
-          />
+          <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full border border-gray-200 flex items-center divide-x divide-gray-200" style="height: 48px;">
+            <input
+              type="text"
+              bind:value={searchQuery}
+              placeholder={isSearchExpanded ? "save" : "search"}
+              class="w-32 h-full px-3 text-sm bg-transparent border-none outline-none focus:ring-0 text-center rounded-l-full"
+              on:keypress={(e) => e.key === 'Enter' && handleSearch()}
+              on:focus={() => {/* placeholder will show 'save' when expanded */}}
+              on:blur={() => isSearchExpanded = false}
+            />
+            <button
+              on:click={handleSearch}
+              class="px-3 h-full filter-save-button flex items-center rounded-r-full"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
+              </svg>
+            </button>
+          </div>
           {#if searchQuery && !searchProgress.completed && searchProgress.total > 0}
             <div class="absolute bottom-[-20px] right-0 text-xs text-gray-500">
               {searchProgress.matched} matches ({Math.round((searchProgress.processed / searchProgress.total) * 100)}%)
             </div>
           {/if}
-          <button
-            on:click={handleSearch}
-            class="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-500 hover:text-blue-600 transition-colors"
-          >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
-            </svg>
-          </button>
         </div>
         
         <button
           on:click={toggleSearchExpanded}
-          class="bg-gray-400/90 backdrop-blur-md text-white rounded-full p-3 hover:bg-gray-500 transition-colors shadow-lg"
+          class="mobile-cancel-button rounded-full p-3"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -1403,33 +1405,37 @@
         <!-- Search Button (Mobile) / Search Box (Desktop) -->
         <div class="md:flex-1 md:max-w-md md:relative">
           <!-- Desktop Search Box -->
-          <input
-            type="text"
-            bind:value={searchQuery}
-            placeholder="filter"
-            tabindex="-1"
-            class="hidden md:block w-full bg-white/90 backdrop-blur-md shadow-lg rounded-full pl-4 pr-10 py-3 text-sm focus:outline-none focus:bg-white transition-all border border-gray-200"
-            on:keypress={(e) => e.key === 'Enter' && handleSearch()}
-          />
+          <div class="hidden w-full md:flex justify-center">
+            <div class="bg-white/90 w-full backdrop-blur-md shadow-lg rounded-full border border-[var(--border)] flex items-center divide-x divide-[var(--border)]" style="height: 40px;">
+              <input
+                type="text"
+                bind:value={searchQuery}
+                placeholder="filter"
+                tabindex="-1"
+                class="w-24 h-full px-3 text-sm bg-transparent border-none outline-none focus:ring-0 flex-grow text-center rounded-l-full"
+                on:keypress={(e) => e.key === 'Enter' && handleSearch()}
+              />
+              <button
+                on:click={handleSearch}
+                class="px-3 h-full filter-save-button rounded-r-full flex items-center"
+              >
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
           {#if searchQuery && !searchProgress.completed && searchProgress.total > 0}
             <div class="hidden md:block absolute bottom-[-18px] right-0 text-xs text-gray-500">
               {searchProgress.matched} matches ({Math.round((searchProgress.processed / searchProgress.total) * 100)}%)
             </div>
           {/if}
-          <button
-            on:click={handleSearch}
-            class="hidden md:block absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-500 hover:text-blue-600 transition-colors"
-          >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
-            </svg>
-          </button>
           
           <!-- Mobile Search Button -->
           <button
             on:click={toggleSearchExpanded}
             tabindex="-1"
-            class="md:hidden bg-white/90 backdrop-blur-md text-gray-700 rounded-full p-3 hover:bg-gray-100 transition-colors shadow-lg border border-gray-200"
+            class="md:hidden mobile-search-button rounded-full p-3"
           >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
@@ -1438,12 +1444,12 @@
         </div>
         
         <!-- Tool Bar (Long Pill) -->
-        <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full border border-gray-200 flex items-center divide-x divide-gray-200">
+        <div class="toolbar-pill flex items-center divide-x divide-[var(--border)]">
           <!-- Indent -->
           <button
             on:click={indentList}
             tabindex="-1"
-            class="px-3 py-3 md:py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors rounded-l-full"
+            class="px-3 py-3 md:py-2 toolbar-button rounded-l-full"
             title="Indent"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1456,7 +1462,7 @@
           <button
             on:click={outdentList}
             tabindex="-1"
-            class="px-3 py-3 md:py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            class="px-3 py-3 md:py-2 toolbar-button"
             title="Outdent"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1469,7 +1475,7 @@
           <button
             on:click={addTodoList}
             tabindex="-1"
-            class="px-3 py-3 md:py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            class="px-3 py-3 md:py-2 toolbar-button"
             title="Add Todo List"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1482,11 +1488,11 @@
           <button
             on:click={addLink}
             tabindex="-1"
-            class="px-3 py-3 md:py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors rounded-r-full"
+            class="px-3 py-3 md:py-2 toolbar-button rounded-r-full"
             title="Add Link"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 512 512">
+              <path d="M49.1,255.6c0-43.8,35.9-78.9,78.9-78.9h102.6v-48.2H128c-71,0-128,57-128,128c0,70.1,57,128,128,128h102.6v-50H128C84.2,334.5,49.1,299.4,49.1,255.6z M153.4,281h204.3v-50.8H153.4V281z M384,127.6H281.4v49.1H384c43.8,0,78.9,35.9,78.9,78.9S427,334.5,384,334.5H281.4v48.2H384c70.1,0,128-57,128-128C512,184.5,454.1,127.6,384,127.6z"/>
             </svg>
           </button>
         </div>
@@ -1495,7 +1501,7 @@
         <button
           on:click={focusAtEnd}
           tabindex="-1"
-          class="bg-blue-600/90 backdrop-blur-md text-white rounded-full p-3 hover:bg-blue-700 transition-colors shadow-lg"
+          class="jump-to-present-btn backdrop-blur-md text-white rounded-full p-3 transition-colors shadow-lg click:transform-scale-105"
           title="Jump to End"
         >
           <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -1671,8 +1677,9 @@
     padding: 30vh 1rem calc(100vh - 4rem) 1rem;
     line-height: 1.25;
     height: 100%;
-    font-family: 'Lora', serif;
-    font-size: 12pt;
+    font-family: var(--editor-font), sans-serif;
+    font-size: var(--editor-font-size);
+    font-weight: var(--editor-font-weight);
   }
 
   /* Force remove underlines from all links */
@@ -1998,8 +2005,8 @@
     margin-right: 0.25rem;
     user-select: none;
     display: flex;
-    align-items: center;
-          border: var(--debug-borders);
+    align-items: baseline;
+    border: var(--debug-borders);
   }
   
   :global(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]) {
@@ -2008,25 +2015,27 @@
     width: 1rem;
     height: 1rem;
     border-radius: 50%; /* Make circular */
-    border: 1px solid #d1d5db;
+    transform: translateY(0.25em);
+    border: 1px solid var(--border);
     margin: 0;
     cursor: pointer;
-    background-color: white;
+    background-color: var(--bg);
     position: relative;
     transition: all 0.2s ease;
   }
   
   :global(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]:checked) {
-    background-color: #3b82f6;
-    border-color: #3b82f6;
+    background-color: var(--accent);
+    border-color: var(--accent);
   }
   
   :global(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]:checked::after) {
     content: '✓';
+    font-family: 'Courier New', monospace;
     position: absolute;
     top: 50%;
     left: 50%;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, -43%);
     color: white;
     font-size: 12px;
     font-weight: bold;

@@ -135,7 +135,7 @@
         {#if step === 'phone'}
           <!-- Phone pill layout -->
           <div class="flex items-center justify-center">
-            <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full border border-gray-200 flex items-center divide-x divide-gray-200" style="height: 40px;">
+            <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full border border-[var(--border)] flex items-center divide-x divide-[var(--border)]" style="height: 40px;">
               <!-- Phone Input -->
               <input
                 bind:this={phoneInput}
