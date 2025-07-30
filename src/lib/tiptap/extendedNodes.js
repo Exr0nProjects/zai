@@ -9,6 +9,7 @@ import Blockquote from '@tiptap/extension-blockquote';
 import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import OrderedList from '@tiptap/extension-ordered-list';
 import CodeBlock from '@tiptap/extension-code-block';
+import { getBlockTimeDisplay } from '../utils/timeGutter.js';
 
 // Common block attributes for all extended nodes
 function getBlockAttributes() {
@@ -50,13 +51,11 @@ function getBlockAttributes() {
     },
     timelineTime: {
       default: null,
-      renderHTML: (attributes) => attributes.timelineTime ? {
-        'data-timeline-time': attributes.timelineTime.toISOString(),
-      } : {},
-      parseHTML: (element) => {
-        const timeStr = element.getAttribute('data-timeline-time');
-        return timeStr ? new Date(timeStr) : null;
-      },
+      defining: true,  // Don't inherit when splitting blocks
+      renderHTML: (attributes) => ({
+        'data-timeline-time': attributes.timelineTime,
+      }),
+      parseHTML: (element) => element.getAttribute('data-timeline-time'),
     },
   };
 }
@@ -106,14 +105,12 @@ function getBlockAttributesConditional() {
     },
     timelineTime: {
       default: null,
+      defining: true,  // Don't inherit when splitting blocks
       renderHTML: (attributes) => {
         if (!attributes.timelineTime) return {};
-        return { 'data-timeline-time': attributes.timelineTime.toISOString() };
+        return { 'data-timeline-time': attributes.timelineTime };
       },
-      parseHTML: (element) => {
-        const timeStr = element.getAttribute('data-timeline-time');
-        return timeStr ? new Date(timeStr) : null;
-      },
+      parseHTML: (element) => element.getAttribute('data-timeline-time'),
     },
   };
 }
@@ -128,6 +125,8 @@ function extendWithBlockAttributes(BaseNode, name, useConditional = false) {
         ...(useConditional ? getBlockAttributesConditional() : getBlockAttributes()),
       };
     },
+    
+
   });
 }
 

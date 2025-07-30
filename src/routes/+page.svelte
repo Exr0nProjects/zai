@@ -50,6 +50,7 @@
   import { SearchHighlightPlugin } from '../lib/tiptap/SearchHighlightPlugin.js';
   import { InlineParser, createParser, PARSERS } from '$lib/tiptap/InlineParser.js';
   import { PatternAnnotationPlugin } from '$lib/tiptap/PatternAnnotationPlugin.js';
+  import { TimeGutterPlugin } from '$lib/tiptap/TimeGutterPlugin.js';
   
   // Debug flags (change these in code as needed)
   const debugNewBlocks = false; // Set to true to show blue borders on new blocks
@@ -491,11 +492,12 @@
         }),
         SearchHighlightPlugin,
         PatternAnnotationPlugin, // Hover annotations for patterns
+        TimeGutterPlugin, // Time gutter on the left
         InlineParser.configure({
           enabled: true,
           debugMode: true, // Set to true for debugging
           parsers: PARSERS,
-          completionChars: [' ', '.', '!', '\n'],
+          throttleDelay: 100, // Process patterns every 100ms while typing
         }),
       ],
       // No initial content - Y.js will manage document state
@@ -1328,12 +1330,12 @@
 
 {#if dev}
   <div class="fixed top-4 right-4 z-50 bg-accent-light text-white px-2 py-1 rounded text-xs font-mono pointer-events-none">
-    timeline-integration
+    throttled-keystroke-parsing
   </div>
 {/if}
 
 <!-- Editor with internal spacing -->
-<div class="bg-white">
+<div class="bg-white editor-container">
   <div 
     bind:this={element}
     class="prose max-w-prose mx-auto focus-within:outline-none px-8"

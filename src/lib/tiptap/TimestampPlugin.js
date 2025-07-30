@@ -160,6 +160,7 @@ export const TimestampPlugin = Extension.create({
                 ...node.attrs,
                 blockId: newBlockId,
                 createdAt: newTimestamp,
+                timelineTime: newTimestamp, // Set timelineTime to creation time by default
                 parentId,
                 debugNew: debugMode,
               });

@@ -10,19 +10,72 @@ export const PARSERS = [
     {
         markType: 'patternDate',
         parse: (text, context) => {
-            // Use chrono with forwardDate option to prefer future dates
-            const results = chrono.parse(text, new Date(), { forwardDate: true });
+            // Use chrono with forwardDate option to prefer future dates and local timezone
+            const results = chrono.parse(text, new Date(), { 
+                forwardDate: true,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+            });
             
             if (context && context.debugMode) {
                 console.log('Chrono parsing:', text, 'found:', results);
             }
             
-            return results.map(result => ({
-                start: result.index,
-                end: result.index + result.text.length,
-                value: result.text,
-                parsedDate: result.date()
-            }));
+            // Score results by specificity and return the most specific one
+            if (results.length === 0) return [];
+            
+            const scoredResults = results.map(result => {
+                const parsedDate = result.start.date();
+                const start = result.start;
+                
+                // Calculate specificity score (higher = more specific)
+                let specificity = 0;
+                
+                // Time components (most valuable)
+                if (start.get('hour') !== undefined) specificity += 4;
+                if (start.get('minute') !== undefined) specificity += 2;
+                if (start.get('second') !== undefined) specificity += 1;
+                
+                // Date components
+                if (start.get('year') !== undefined) specificity += 3;
+                if (start.get('month') !== undefined) specificity += 3;
+                if (start.get('day') !== undefined) specificity += 3;
+                
+                // Day of week
+                if (start.get('weekday') !== undefined) specificity += 1;
+                
+                // Prefer longer text spans (more context)
+                specificity += result.text.length * 0.1;
+                
+                return {
+                    start: result.index,
+                    end: result.index + result.text.length,
+                    value: result.text,
+                    parsedDate: parsedDate,
+                    specificity: specificity,
+                    chronoResult: result
+                };
+            });
+            
+            // Sort by specificity (highest first) and return the most specific
+            scoredResults.sort((a, b) => b.specificity - a.specificity);
+            
+            if (context && context.debugMode) {
+                console.log('🕒 Chrono specificity scores:', scoredResults.map(r => ({
+                    text: r.value,
+                    score: r.specificity,
+                    components: {
+                        hour: r.chronoResult.start.get('hour'),
+                        minute: r.chronoResult.start.get('minute'),
+                        day: r.chronoResult.start.get('day'),
+                        month: r.chronoResult.start.get('month'),
+                        year: r.chronoResult.start.get('year'),
+                        weekday: r.chronoResult.start.get('weekday')
+                    }
+                })));
+            }
+            
+            // Return only the most specific result
+            return [scoredResults[0]];
         }
     },
     {
@@ -160,17 +213,50 @@ function getCurrentTypingContext(editor) {
   };
 }
 
-// Helper to check what was just typed
-function getLastTypedChar(transaction) {
-  if (!transaction.docChanged) return null;
+// Throttle utility function
+function throttle(func, delay) {
+  let timeoutId;
+  let lastExecTime = 0;
   
-  const steps = transaction.steps;
-  for (const step of steps) {
-    if (step.jsonID === 'replace' && step.slice.content.size > 0) {
-      const text = step.slice.content.textBetween(0, step.slice.content.size);
-      return text.slice(-1);
+  return function (...args) {
+    const currentTime = Date.now();
+    
+    if (currentTime - lastExecTime > delay) {
+      func.apply(this, args);
+      lastExecTime = currentTime;
+    } else {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        func.apply(this, args);
+        lastExecTime = Date.now();
+      }, delay - (currentTime - lastExecTime));
+    }
+  };
+}
+
+// Helper to find the nearest parent block with blockId
+function findBlockWithId(state, fromPos) {
+  const $pos = state.doc.resolve(fromPos);
+  
+  // Traverse upwards through the document tree
+  for (let depth = $pos.depth; depth >= 0; depth--) {
+    const node = $pos.node(depth);
+    
+    // Check if this is a block node with blockId
+    if (node.isBlock && node.attrs && node.attrs.blockId) {
+      // Skip the root document (depth 0) as it can't have markup changed
+      if (depth === 0) continue;
+      
+      // Use $pos.before(depth) to get the position just before the node
+      const nodePos = $pos.before(depth);
+      
+      return {
+        node,
+        pos: nodePos
+      };
     }
   }
+  
   return null;
 }
 
@@ -222,16 +308,27 @@ function processPatterns(extension, editor) {
                 parsedDate: result.parsedDate || null
               }));
               
-              // Set timelineTime on the containing node if we have a parsed date
-              if (result.parsedDate) {
-                const node = context.node;
-                const nodePos = context.nodeStart - 1; // Position of the node itself
-                
-                tr.setNodeMarkup(nodePos, undefined, {
-                  ...node.attrs,
-                  timelineTime: result.parsedDate
-                });
-              }
+                              // Set timelineTime on the nearest parent block with blockId if we have a parsed date
+                if (result.parsedDate) {
+                  const targetBlock = findBlockWithId(state, context.nodeStart);
+                  if (targetBlock) {
+                    // Store as ISO string like createdAt
+                    const dateToSet = result.parsedDate instanceof Date 
+                      ? result.parsedDate.toISOString() 
+                      : new Date(result.parsedDate).toISOString();
+                    
+                    tr.setNodeMarkup(targetBlock.pos, undefined, {
+                      ...targetBlock.node.attrs,
+                      timelineTime: dateToSet
+                    });
+                    
+                    if (extension.options.debugMode) {
+                      console.log('🕒 Set timelineTime on block:', targetBlock.node.type.name, 'date:', dateToSet);
+                    }
+                  } else if (extension.options.debugMode) {
+                    console.log('⚠️ No block with blockId found for timelineTime');
+                  }
+                }
             } else if (parser.markType === 'patternTag') {
               tr.addMark(from, to, markType.create({
                 value: result.value || result.text || context.fullText.slice(result.start, result.end)
@@ -266,8 +363,8 @@ export const InlineParser = Extension.create({
       // Array of parser functions you provide
       parsers: PARSERS,
       
-      // Completion characters that trigger parsing
-      completionChars: [' ', '.', ',', '!', '?', '\n'],
+      // Throttle delay in milliseconds
+      throttleDelay: 100,
     };
   },
 
@@ -299,30 +396,36 @@ export const InlineParser = Extension.create({
     };
   },
 
-  // Listen for completion triggers
+  // Listen for any document changes and throttle pattern processing
   onUpdate({ transaction, editor }) {
     if (!this.options.enabled || !transaction.docChanged) return;
     
     // Only process user typing, not programmatic changes
     if (transaction.getMeta('preventParsing')) return;
     
-    const lastChar = getLastTypedChar(transaction);
-    
-    if (this.options.completionChars.includes(lastChar)) {
-      if (this.options.debugMode) {
-        console.log('🎯 Completion trigger:', lastChar);
-      }
-      
-      // Use standalone function with extension reference
-      const extension = this;
-      setTimeout(() => processPatterns(extension, editor), 10);
+    // Initialize throttled function if not already done (safety check)
+    if (!this.throttledProcessPatterns) {
+      this.throttledProcessPatterns = throttle(
+        (extension, editor) => processPatterns(extension, editor),
+        this.options.throttleDelay
+      );
     }
+    
+    // Use throttled processing for better performance
+    this.throttledProcessPatterns(this, editor);
   },
 
   onCreate() {
+    // Initialize throttled pattern processing function
+    this.throttledProcessPatterns = throttle(
+      (extension, editor) => processPatterns(extension, editor),
+      this.options.throttleDelay
+    );
+    
     if (this.options.debugMode) {
       console.log('🎨 Pattern Highlighter extension loaded');
       console.log('📝 Parsers registered:', this.options.parsers.length);
+      console.log('⏱️ Throttle delay:', this.options.throttleDelay + 'ms');
       
       // Add debug helpers to global scope
       window.highlightPatterns = () => this.editor.commands.highlightPatterns();
