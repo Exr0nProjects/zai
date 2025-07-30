@@ -1,7 +1,7 @@
 // Streaming search system for timeline-based document filtering
 // Uses search state store to show/hide blocks based on search query
 
-const LOG = true;
+const LOG = false;
 
 import { serializeToMarkdown } from '../tiptap/MarkdownClipboard.js';
 import { hideBlockInSearch, showBlockInSearch, clearSearchHiding, searchHiddenBlocks } from '../stores/searchHidden.js';

@@ -5,6 +5,7 @@
 
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from 'prosemirror-state';
+import { serializeToMarkdown } from './MarkdownClipboard';
 
 export const TimelineSortingPlugin = Extension.create({
   name: 'timelineSorting',
@@ -25,7 +26,7 @@ export const TimelineSortingPlugin = Extension.create({
     const performSort = (blockToMove, shouldScroll) => {
       if (!editorView || !blockToMove || !blockToMove.timelineTime || isProcessing) return;
       
-      console.log('🕒 Performing timeline sort for block:', blockToMove.blockId);
+      console.log('🕒 Performing timeline sort for block:', blockToMove.blockId, blockToMove.node.type.name, blockToMove.node.content);
       isProcessing = true;
       
       try {
@@ -34,7 +35,6 @@ export const TimelineSortingPlugin = Extension.create({
         // Clear processing flag after a delay to allow transaction to complete
         setTimeout(() => {
           isProcessing = false;
-          console.log('🕒 Timeline sort processing complete');
         }, 100);
       }
     };
@@ -58,17 +58,14 @@ export const TimelineSortingPlugin = Extension.create({
             }
             
             const currentBlock = findBlockWithTimestamp(newState, newState.selection.from);
-            
             // Check if we moved out of a timestamped block
             if (value.lastBlockWithTimestamp && 
                 (!currentBlock || currentBlock.blockId !== value.lastBlockWithTimestamp.blockId)) {
               
-              console.log('🕒 Moved out of timestamped block:', value.lastBlockWithTimestamp.blockId);
-              console.log('🕒 Into block:', currentBlock?.blockId || 'none');
-              console.log('🕒 Has timestamp:', !!value.lastBlockWithTimestamp.timelineTime);
-              
               // Only set pending sort if we have a valid timestamp and aren't already processing
               if (!pendingSort && value.lastBlockWithTimestamp.timelineTime) {
+                console.log('set pendingsort', value.lastBlockWithTimestamp, serializeToMarkdown(value.lastBlockWithTimestamp.node), tr)
+                // console.log(' ' + serializeContentToPositions(view.state.doc.toJSON().content) + '\n' + ' '.repeat(topLevelBlock.from) + '^' + ' '.repeat(topLevelBlock.to-topLevelBlock.from) + '^')
                 pendingSort = { 
                   block: value.lastBlockWithTimestamp, 
                   shouldScroll: false 
@@ -82,11 +79,19 @@ export const TimelineSortingPlugin = Extension.create({
                 pendingSortId: value.lastBlockWithTimestamp.blockId,
               };
             }
+
+            if (value.lastBlockWithTimestamp === null) {
+              return {
+                lastBlockWithTimestamp: currentBlock,
+                pendingSortId: null,
+              };
+            }
             
-            return {
-              lastBlockWithTimestamp: currentBlock,
-              pendingSortId: null,
-            };
+            return value; // do nothing. can't just set to currentBlock because new-line transactions temporarily have duplicated ids. TODO: do we need to clear pendingSort? 
+            // return {
+            //   lastBlockWithTimestamp: currentBlock,
+            //   pendingSortId: null,
+            // };
           }
         },
         
@@ -98,7 +103,6 @@ export const TimelineSortingPlugin = Extension.create({
             update(view, prevState) {
               // Check for pending sorts
               if (pendingSort && !isProcessing) {
-                console.log('🕒 Processing pending sort:', pendingSort.block.blockId);
                 
                 // Capture and clear pendingSort immediately to prevent race conditions
                 const sortToProcess = pendingSort;
@@ -125,7 +129,6 @@ export const TimelineSortingPlugin = Extension.create({
               const pluginState = this.getState(state);
               
               if (pluginState && pluginState.lastBlockWithTimestamp) {
-                console.log('🕒 DOM blur event for block:', pluginState.lastBlockWithTimestamp.blockId);
                 const blockToSort = pluginState.lastBlockWithTimestamp;
                 setTimeout(() => {
                   performSort(blockToSort, true);
@@ -165,51 +168,43 @@ function findBlockWithTimestamp(state, pos) {
 }
 
 /**
- * Find the highest ancestor that has no siblings
+ * Find the first ancestor that has siblings
  */
-function findHighestAncestorWithNoSiblings(state, startPos) {
+function firstAncestorWithSiblings(state, startPos) {
   const $pos = state.doc.resolve(startPos);
   let highestBlock = null;
+  console.log('firstAncestorWithSiblings', $pos.depth, $pos.node(0).type.name)
   
   // Start from the current block and go up
   for (let depth = $pos.depth; depth >= 1; depth--) {
     const node = $pos.node(depth);
     const parent = $pos.node(depth - 1);
-    
+
     if (node.isBlock && node.attrs && node.attrs.blockId) {
-      // Check if this node has siblings
       const parentChildCount = parent.childCount;
-      const nodeIndex = $pos.index(depth - 1);
+      console.log('   ', depth, node.type.name, 'has blockid. parent childcount:', parentChildCount, parent.type.name, serializeToMarkdown(parent));
       
-      // If parent has only one child (this node), it has no siblings
-      if (parentChildCount === 1) {
-        highestBlock = {
+      if (parentChildCount > 1) {
+        console.log('   has siblings. returning', node.type.name, serializeToMarkdown(node));
+        return {
           node,
           from: $pos.start(depth),
           to: $pos.end(depth),
           depth
         };
-      } else {
-        // This node has siblings, so stop here
-        break;
-      }
+      } 
     }
   }
   
-  // If we didn't find a no-sibling ancestor, use the original block
-  if (!highestBlock) {
-    const currentNode = $pos.node($pos.depth);
-    if (currentNode.isBlock && currentNode.attrs && currentNode.attrs.blockId) {
-      highestBlock = {
-        node: currentNode,
-        from: $pos.start($pos.depth),
-        to: $pos.end($pos.depth),
-        depth: $pos.depth
-      };
-    }
+  const currentNode = $pos.node($pos.depth);
+  if (currentNode.isBlock && currentNode.attrs && currentNode.attrs.blockId) {
+    highestBlock = {
+      node: currentNode,
+      from: $pos.start($pos.depth),
+      to: $pos.end($pos.depth),
+      depth: $pos.depth
+    };
   }
-  
-  return highestBlock;
 }
 
 /**
@@ -217,7 +212,7 @@ function findHighestAncestorWithNoSiblings(state, startPos) {
  */
 function findTimelineInsertionPosition(state, timelineTime) {
   const targetDate = new Date(timelineTime);
-  let insertPos = state.doc.content.size; // Default to end
+  let insertPos = state.doc.content.size-1; // Default to end // TODO: added -1 to stop inserting new paragraph
   
   // Traverse top-level blocks to find insertion point
   state.doc.descendants((node, pos, parent, index) => {
@@ -232,6 +227,7 @@ function findTimelineInsertionPosition(state, timelineTime) {
           return false; // Stop traversal
         }
       } else if (node.attrs.createdAt) {
+        console.warn('found block with no timelineTime. using createdAt:', node.id, serializeToMarkdown(node));
         // Fallback to createdAt
         const nodeDate = node.attrs.createdAt.includes('T') 
           ? new Date(node.attrs.createdAt)
@@ -252,6 +248,29 @@ function findTimelineInsertionPosition(state, timelineTime) {
 }
 
 /**
+ * function that takes the content json and serializes into positions. inserts <> to represent open/close blocks
+ */
+function serializeContentToPositions(content) {
+  const ret = content.map((node, index) => {
+    if (node.type === 'text') {
+      return node.text
+    }
+    if (node.type === 'paragraph') {
+      if (node.hasOwnProperty('content')) {
+        return '<' + serializeContentToPositions(node.content) + '>'
+      } else {
+        return '<>'
+      }
+    }
+    if (node.hasOwnProperty('content')) {
+      return '<' + serializeContentToPositions(node.content) + '>'
+    }
+    return ''
+  }).join('');
+  return ret;
+}
+
+/**
  * Move a block to its chronological position in the timeline
  */
 function moveBlockToTimelinePosition(view, blockInfo, shouldScroll) {
@@ -259,77 +278,73 @@ function moveBlockToTimelinePosition(view, blockInfo, shouldScroll) {
     console.warn('🕒 Timeline sort: Invalid view or block info', { view, blockInfo });
     return;
   }
+
+  console.log('\n\n\n\n docjson\n', view.state.doc.toJSON().content)
+  console.log(' ' + serializeContentToPositions(view.state.doc.toJSON().content) + '\n' + ' '.repeat(blockInfo.pos) + '^' )
   
-  console.log('🕒 Moving block to timeline position:', blockInfo);
   
   const { state } = view;
   const tr = state.tr;
+
+  console.log('blockInfo searching', blockInfo)
   
   // Find the highest ancestor with no siblings
-  const topLevelBlock = findHighestAncestorWithNoSiblings(state, blockInfo.pos);
+  const topLevelBlock = firstAncestorWithSiblings(state, blockInfo.pos);
   if (!topLevelBlock) return;
   
-  console.log('🕒 Found top-level block to move:', {
-    ...topLevelBlock,
-    nodeType: topLevelBlock.node.type.name,
-    hasContent: topLevelBlock.node.content.size > 0,
-    nodeContent: topLevelBlock.node.textContent || '[no text]',
-    rangeSize: topLevelBlock.to - topLevelBlock.from
-  });
+  console.log('🕒 Found top-level block to move:', 
+    'topLevelBlock', topLevelBlock,
+    'nodeType', topLevelBlock.node.type.name,
+    'hasContent', topLevelBlock.node.content.size > 0,
+    'nodeContent', serializeToMarkdown(topLevelBlock.node) || '[no text]',
+    'rangeSize', topLevelBlock.to - topLevelBlock.from
+  );
   
+
   // Find the correct insertion position in timeline order
   const insertPos = findTimelineInsertionPosition(state, blockInfo.timelineTime);
+  console.log('🕒 Insert position:', insertPos);
   
-  console.log('🕒 Timeline insertion position:', insertPos);
   
   // Don't move if it's already in the right position
   if (insertPos >= topLevelBlock.from && insertPos <= topLevelBlock.to) {
-    console.log('🕒 Block already in correct position');
     return;
   }
   
   // Check if we have a valid block to move
   if (topLevelBlock.from >= topLevelBlock.to) {
-    console.log('⚠️ Skipping empty block move - invalid range:', {
-      blockId: blockInfo.blockId,
-      from: topLevelBlock.from,
-      to: topLevelBlock.to
-    });
     return;
   }
 
+
   // Use proper ProseMirror replaceRange to move content with attributes preserved
-  const slice = state.doc.slice(topLevelBlock.from, topLevelBlock.to);
+  const slice = state.doc.slice(topLevelBlock.from, topLevelBlock.to+1);
   
-  console.log('🔄 Moving block with attributes:', {
-    blockId: blockInfo.blockId,
-    hasSliceContent: !!slice.content,
-    sliceSize: slice.size,
-    originalAttrs: slice.content.firstChild?.attrs,
-    from: topLevelBlock.from,
-    to: topLevelBlock.to,
-    insertPos
-  });
+  console.log('slice', slice)
 
   // Skip if there's no content to move
   if (slice.size === 0) {
-    console.log('⚠️ Skipping empty slice move for block:', blockInfo.blockId);
     return;
   }
   
   let finalInsertPos;
+
+  console.log('deleting')
+  console.log(' ' + serializeContentToPositions(view.state.doc.toJSON().content) + '\n' + ' '.repeat(topLevelBlock.from) + '^' + ' '.repeat(topLevelBlock.to-topLevelBlock.from) + '^')
+  tr.deleteRange(topLevelBlock.from, topLevelBlock.to);
   
-  if (insertPos < topLevelBlock.from) {
-    // Moving earlier: insert at new position, then delete original
-    tr.replaceRange(insertPos, insertPos, slice);
-    tr.delete(topLevelBlock.from + slice.size, topLevelBlock.to + slice.size);
-    finalInsertPos = insertPos;
-  } else {
-    // Moving later: delete original, then insert at adjusted position  
-    tr.delete(topLevelBlock.from, topLevelBlock.to);
-    finalInsertPos = insertPos - (topLevelBlock.to - topLevelBlock.from);
-    tr.replaceRange(finalInsertPos, finalInsertPos, slice);
-  }
+  
+  // if (insertPos < topLevelBlock.from) {
+  //   // Moving earlier: insert at new position, then delete original
+  //   tr.replaceRange(insertPos, insertPos, slice);
+  //   tr.delete(topLevelBlock.from + slice.size, topLevelBlock.to + slice.size + 1);
+  //   finalInsertPos = insertPos;
+  // } else {
+  //   // Moving later: delete original, then insert at adjusted position  
+  //   tr.delete(topLevelBlock.from, topLevelBlock.to + 1);
+  //   finalInsertPos = insertPos - (topLevelBlock.to - topLevelBlock.from);
+  //   tr.replaceRange(finalInsertPos, finalInsertPos, slice);
+  // }
   
   // Mark this as a timeline sort to prevent other plugins from interfering
   tr.setMeta('timelineSort', true);
@@ -359,5 +374,5 @@ function moveBlockToTimelinePosition(view, blockInfo, shouldScroll) {
         });
       }
     }, 100);
-  }
+}
 } 

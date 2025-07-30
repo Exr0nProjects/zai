@@ -94,7 +94,9 @@ export const PARSERS = [
                 });
             }
             
-            console.log('Parsing tag:', text, 'found:', results);
+            if (context && context.debugMode) {
+                console.log('Parsing tag:', text, 'found:', results);
+            }
             return results;
         }
     }  
@@ -267,10 +269,6 @@ function processPatterns(extension, editor) {
   const context = getCurrentTypingContext(editor);
   if (!context) return;
   
-  if (extension.options.debugMode) {
-    console.log('🔍 Processing text:', context.fullText);
-  }
-  
   const { state } = editor;
   const tr = state.tr;
   let hasChanges = false;
@@ -293,10 +291,6 @@ function processPatterns(extension, editor) {
         results.forEach(result => {
           const from = context.nodeStart + result.start;
           const to = context.nodeStart + result.end;
-          
-          if (extension.options.debugMode) {
-            console.log(`🎨 ${parser.markType} highlighting:`, result);
-          }
           
           // Apply appropriate mark type
           const markType = state.schema.marks[parser.markType];
@@ -390,7 +384,9 @@ export const InlineParser = Extension.create({
       // Toggle parsing
       toggleParsing: () => ({ editor }) => {
         this.options.enabled = !this.options.enabled;
-        console.log('Pattern parsing:', this.options.enabled ? 'enabled' : 'disabled');
+        if (this.options.debugMode) {
+          console.log('Pattern parsing:', this.options.enabled ? 'enabled' : 'disabled');
+        }
         return true;
       },
     };
@@ -421,19 +417,6 @@ export const InlineParser = Extension.create({
       (extension, editor) => processPatterns(extension, editor),
       this.options.throttleDelay
     );
-    
-    if (this.options.debugMode) {
-      console.log('🎨 Pattern Highlighter extension loaded');
-      console.log('📝 Parsers registered:', this.options.parsers.length);
-      console.log('⏱️ Throttle delay:', this.options.throttleDelay + 'ms');
-      
-      // Add debug helpers to global scope
-      window.highlightPatterns = () => this.editor.commands.highlightPatterns();
-      window.clearPatterns = () => this.editor.commands.clearPatterns();
-      window.toggleParsing = () => this.editor.commands.toggleParsing();
-      window.getContext = () => getCurrentTypingContext(this.editor);
-      window.processPatterns = () => processPatterns(this, this.editor);
-    }
   },
 });
 

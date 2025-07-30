@@ -40,7 +40,6 @@ class TagManager {
       });
 
       this.initialized = true;
-      console.log('Tag manager initialized successfully');
     } catch (error) {
       console.error('Failed to initialize tag manager:', error);
       throw error;

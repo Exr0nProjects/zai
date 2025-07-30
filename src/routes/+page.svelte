@@ -14,7 +14,7 @@
     ExtendedHorizontalRule,
     ExtendedOrderedList,
     ExtendedCodeBlock
-  } from '$lib/tiptap/extendedNodes.js';
+  } from '$lib/tiptap/ExtendedNodes.js';
   import Bold from '@tiptap/extension-bold';
   import Italic from '@tiptap/extension-italic';
   import Code from '@tiptap/extension-code';
@@ -36,7 +36,6 @@
   import ListKeymap from '@tiptap/extension-list-keymap';
   import Link from '@tiptap/extension-link';
   import BubbleMenu from '@tiptap/extension-bubble-menu';
-  import { getAllBlocks, sortBlocksByTimestamp, getBlockStats } from '$lib/utils/blockSorting.js';
   import { generateBlockId, getCurrentTimestamp } from '$lib/utils/snowflake.js';
   // import { TagMention } from '$lib/tiptap/TagMention.js';
   // import { TagParser } from '$lib/tiptap/TagParser.js';
@@ -873,19 +872,6 @@
     ydoc.destroy();
   });
   
-  // Removed initializeExistingBlocks - TimestampPlugin handles this automatically without duplication
-
-  function sortBlocksByTimestampAction(ascending = true) {
-    if (!editor) return;
-    
-    const blocks = getAllBlocks(editor);
-    const sortedBlocks = sortBlocksByTimestamp(blocks, ascending);
-    
-    // Block sorting complete
-  }
-
-
-
   function getInitialContent() {
     return {
       type: 'doc',
@@ -1670,7 +1656,7 @@
 <style>
   :global(:root) {
     --debug-borders: none; /* Change to "1px solid red" to show debug borders */
-    --block-borders: none; /* Change to "1px solid #000" to show block borders */
+    --block-borders: 0.5px solid black; /* Change to "1px solid #000" to show block borders */
     --block-hover-bg: none; /* Change to "rgba(0, 0, 0, 0.02)" to show hover background */
   }
 

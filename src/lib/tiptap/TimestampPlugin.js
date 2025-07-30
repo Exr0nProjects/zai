@@ -177,6 +177,8 @@ export const TimestampPlugin = Extension.create({
                 parentId,
                 debugNew: debugMode,
               });
+
+              tr.setMeta('zai-idRelabel', true);
               
               if (LOG) console.log(`🆕 ${reason}: ${node.type.name} at pos ${pos}`, {
                 oldBlockId: oldBlockId?.slice(-8) || 'none',
