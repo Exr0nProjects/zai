@@ -37,6 +37,7 @@
   import Link from '@tiptap/extension-link';
   import BubbleMenu from '@tiptap/extension-bubble-menu';
   import { getAllBlocks, sortBlocksByTimestamp, getBlockStats } from '$lib/utils/blockSorting.js';
+  import { generateBlockId, getCurrentTimestamp } from '$lib/utils/snowflake.js';
   // import { TagMention } from '$lib/tiptap/TagMention.js';
   // import { TagParser } from '$lib/tiptap/TagParser.js';
   // import { InputRuleTagParser } from '$lib/tiptap/InputRuleTagParser.js';
@@ -51,6 +52,7 @@
   import { InlineParser, createParser, PARSERS } from '$lib/tiptap/InlineParser.js';
   import { PatternAnnotationPlugin } from '$lib/tiptap/PatternAnnotationPlugin.js';
   import { TimeGutterPlugin } from '$lib/tiptap/TimeGutterPlugin.js';
+  import { TimelineSortingPlugin } from '$lib/tiptap/TimelineSortingPlugin.js';
   
   // Debug flags (change these in code as needed)
   const debugNewBlocks = false; // Set to true to show blue borders on new blocks
@@ -493,6 +495,10 @@
         SearchHighlightPlugin,
         PatternAnnotationPlugin, // Hover annotations for patterns
         TimeGutterPlugin, // Time gutter on the left
+        TimelineSortingPlugin.configure({
+          enabled: true,
+          debugMode: true, // Set to true for debugging timeline sorting
+        }),
         InlineParser.configure({
           enabled: true,
           debugMode: true, // Set to true for debugging
@@ -1089,17 +1095,13 @@
     
     // Ensure exactly 3 empty paragraphs at the end
     if (trailingEmptyParagraphs < 3) {
-      // Add top-level paragraphs to reach 3
+      // Add paragraphs using editor commands so TimestampPlugin can process them
       const needed = 3 - trailingEmptyParagraphs;
-      const { tr } = editor.state;
       
-      for (let i = 0; i < needed; i++) {
-        // Insert at document end as top-level paragraph
-        const paragraph = editor.state.schema.nodes.paragraph.create();
-        tr.insert(tr.doc.content.size, paragraph);
-      }
-      
-      editor.view.dispatch(tr);
+      // Insert paragraphs - TimestampPlugin will automatically assign IDs
+      editor.commands.focus('end');
+      const content = Array(needed).fill(null).map(() => ({ type: 'paragraph' }));
+      editor.commands.insertContent(content);
     } else if (trailingEmptyParagraphs > 3) {
       // Remove excess paragraphs from the end
       const toRemove = trailingEmptyParagraphs - 3;
@@ -1330,7 +1332,7 @@
 
 {#if dev}
   <div class="fixed top-4 right-4 z-50 bg-accent-light text-white px-2 py-1 rounded text-xs font-mono pointer-events-none">
-    throttled-keystroke-parsing
+    fix-empty-blocks-infinite-loops
   </div>
 {/if}
 

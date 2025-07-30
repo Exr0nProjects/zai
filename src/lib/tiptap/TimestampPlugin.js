@@ -102,6 +102,13 @@ export const TimestampPlugin = Extension.create({
           const docChanged = transactions.some(tr => tr.docChanged);
           if (!docChanged) return null;
           
+          // Skip processing for timeline sort transactions
+          const isTimelineSort = transactions.some(tr => tr.getMeta('timelineSort'));
+          if (isTimelineSort) {
+            if (LOG) console.log('🕒 TimestampPlugin skipping timeline sort transaction');
+            return null;
+          }
+          
           let tr = null;
           const targetNodeTypes = ['paragraph', 'heading', 'listItem', 'taskItem', 'bulletList', 'taskList'];
           const debugMode = window.debugNewBlocks || false;
@@ -116,6 +123,7 @@ export const TimestampPlugin = Extension.create({
               
               // Always assign IDs to nodes without blockId
               if (!node.attrs.blockId) {
+                if (LOG) console.log('🕒 TimestampPlugin found block without blockId:', node.type.name, 'at pos:', pos);
                 nodesToUpdate.push({
                   pos,
                   node,
@@ -156,11 +164,16 @@ export const TimestampPlugin = Extension.create({
               // Store the new ID in temp map for subsequent lookups
               tempIdMap.set(pos, newBlockId);
               
+              const preservedTimelineTime = node.attrs.timelineTime || newTimestamp;
+              if (LOG && node.attrs.timelineTime && node.attrs.timelineTime !== newTimestamp) {
+                console.log(`🕒 TimestampPlugin preserving existing timelineTime:`, node.attrs.timelineTime, 'for block:', newBlockId.slice(-8));
+              }
+              
               tr.setNodeMarkup(pos, null, {
                 ...node.attrs,
                 blockId: newBlockId,
                 createdAt: newTimestamp,
-                timelineTime: newTimestamp, // Set timelineTime to creation time by default
+                timelineTime: preservedTimelineTime,
                 parentId,
                 debugNew: debugMode,
               });

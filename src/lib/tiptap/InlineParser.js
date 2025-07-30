@@ -401,7 +401,7 @@ export const InlineParser = Extension.create({
     if (!this.options.enabled || !transaction.docChanged) return;
     
     // Only process user typing, not programmatic changes
-    if (transaction.getMeta('preventParsing')) return;
+    if (transaction.getMeta('preventParsing') || transaction.getMeta('timelineSort')) return;
     
     // Initialize throttled function if not already done (safety check)
     if (!this.throttledProcessPatterns) {
