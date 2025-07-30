@@ -70,7 +70,11 @@ const DateMark = Mark.create({
           return dateStr ? new Date(dateStr) : null;
         },
         renderHTML: attributes => {
-          return attributes.parsedDate ? { 'data-parsed-date': attributes.parsedDate.toISOString() } : {};
+          if (!attributes.parsedDate) return {};
+          const isoString = typeof attributes.parsedDate === 'string' 
+            ? attributes.parsedDate 
+            : attributes.parsedDate.toISOString();
+          return { 'data-parsed-date': isoString };
         },
       },
     };
@@ -82,7 +86,9 @@ const DateMark = Mark.create({
 
   renderHTML({ HTMLAttributes, mark }) {
     const parsedDateAttr = mark.attrs.parsedDate ? 
-      { 'data-parsed-date': mark.attrs.parsedDate.toISOString() } : {};
+      { 'data-parsed-date': typeof mark.attrs.parsedDate === 'string' 
+          ? mark.attrs.parsedDate 
+          : mark.attrs.parsedDate.toISOString() } : {};
       
     return [
       'span',
@@ -192,7 +198,7 @@ function processPatterns(extension, editor) {
     }
   });
   
-  // Run each parser you provided
+    // Run each parser you provided
   extension.options.parsers.forEach(parser => {
     try {
       const results = parser.parse(context.fullText, context);
@@ -206,22 +212,33 @@ function processPatterns(extension, editor) {
             console.log(`🎨 ${parser.markType} highlighting:`, result);
           }
           
-                      // Apply appropriate mark type
-            const markType = state.schema.marks[parser.markType];
-            if (markType) {
-              if (parser.markType === 'patternDate') {
-                tr.addMark(from, to, markType.create({
-                  type: 'date',
-                  value: result.value || result.text || context.fullText.slice(result.start, result.end),
-                  parsedDate: result.parsedDate || null
-                }));
-              } else if (parser.markType === 'patternTag') {
-                tr.addMark(from, to, markType.create({
-                  value: result.value || result.text || context.fullText.slice(result.start, result.end)
-                }));
+          // Apply appropriate mark type
+          const markType = state.schema.marks[parser.markType];
+          if (markType) {
+            if (parser.markType === 'patternDate') {
+              tr.addMark(from, to, markType.create({
+                type: 'date',
+                value: result.value || result.text || context.fullText.slice(result.start, result.end),
+                parsedDate: result.parsedDate || null
+              }));
+              
+              // Set timelineTime on the containing node if we have a parsed date
+              if (result.parsedDate) {
+                const node = context.node;
+                const nodePos = context.nodeStart - 1; // Position of the node itself
+                
+                tr.setNodeMarkup(nodePos, undefined, {
+                  ...node.attrs,
+                  timelineTime: result.parsedDate
+                });
               }
-              hasChanges = true;
+            } else if (parser.markType === 'patternTag') {
+              tr.addMark(from, to, markType.create({
+                value: result.value || result.text || context.fullText.slice(result.start, result.end)
+              }));
             }
+            hasChanges = true;
+          }
         });
       }
     } catch (error) {

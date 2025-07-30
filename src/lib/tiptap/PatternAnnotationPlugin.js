@@ -119,12 +119,26 @@ class PatternAnnotationView {
   formatDate(dateStr) {
     try {
       const date = new Date(dateStr);
-      return date.toLocaleDateString('en-US', { 
+      const now = new Date();
+      
+      // Check if it's invalid
+      if (isNaN(date.getTime())) {
+        return 'Invalid Date';
+      }
+      
+      // Format options
+      const options = { 
         weekday: 'short', 
         month: 'short', 
-        day: 'numeric',
-        year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
-      });
+        day: 'numeric'
+      };
+      
+      // Add year if it's different from current year
+      if (date.getFullYear() !== now.getFullYear()) {
+        options.year = 'numeric';
+      }
+      
+      return date.toLocaleDateString('en-US', options);
     } catch (e) {
       return 'Invalid Date';
     }

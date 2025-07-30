@@ -48,6 +48,16 @@ function getBlockAttributes() {
       } : {},
       parseHTML: (element) => element.classList.contains('debug-new-block-parent'),
     },
+    timelineTime: {
+      default: null,
+      renderHTML: (attributes) => attributes.timelineTime ? {
+        'data-timeline-time': attributes.timelineTime.toISOString(),
+      } : {},
+      parseHTML: (element) => {
+        const timeStr = element.getAttribute('data-timeline-time');
+        return timeStr ? new Date(timeStr) : null;
+      },
+    },
   };
 }
 
@@ -93,6 +103,17 @@ function getBlockAttributesConditional() {
         return { 'class': 'debug-new-block-parent' };
       },
       parseHTML: (element) => element.classList.contains('debug-new-block-parent'),
+    },
+    timelineTime: {
+      default: null,
+      renderHTML: (attributes) => {
+        if (!attributes.timelineTime) return {};
+        return { 'data-timeline-time': attributes.timelineTime.toISOString() };
+      },
+      parseHTML: (element) => {
+        const timeStr = element.getAttribute('data-timeline-time');
+        return timeStr ? new Date(timeStr) : null;
+      },
     },
   };
 }
