@@ -317,7 +317,7 @@ function processPatterns(extension, editor) {
                     });
                     
                     if (extension.options.debugMode) {
-                      console.log('🕒 Set timelineTime on block:', targetBlock.node.type.name, 'date:', dateToSet);
+                      // console.log('🕒 Set timelineTime on block:', targetBlock.node.type.name, 'date:', dateToSet);
                     }
                   } else if (extension.options.debugMode) {
                     console.log('⚠️ No block with blockId found for timelineTime');
