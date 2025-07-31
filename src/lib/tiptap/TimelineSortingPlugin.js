@@ -227,42 +227,69 @@ function firstAncestorWithSiblings(state, startPos) {
 
 /**
  * Find where to insert a block based on timeline order
- * returns null if the target date is already there, ie. there are multiple blocks w same timestamp
+ * returns null if all blocks between current and target position are within a minute range
  */
 function findTimelineInsertionPosition(state, blockInfo) {
   const targetDate = new Date(blockInfo.timelineTime);
-  let insertPos;
-
-  // console.log('sorting!', state.doc.content)
-  // console.log('target date', targetDate)
-
-  let prev_node_date;
   
+  // Find our own top-level block position
+  const topLevelBlock = firstAncestorWithSiblings(state, blockInfo.pos);
+  if (!topLevelBlock) return null;
+  
+  // State variables to track iteration
+  let seenInsertionPoint = false;  // Found nodeDate > targetDate
+  let seenOwnNode = false;         // Found our own top-level block
+  let hasNodeOutsideMinuteRange = false;  // Any intervening node outside minute range
+  let insertPos = null;
+  
+  // Iterate through top-level descendants only
   state.doc.descendants((node, pos, parent, index) => {
-    if (typeof insertPos !== 'undefined') return false;
-    if (parent === state.doc && node.isBlock && node.attrs) {
-      if (node.attrs.timelineTime) {
-        const nodeDate = new Date(node.attrs.timelineTime);
-        // console.log('compare dates', nodeDate, 'vs', targetDate, nodeDate > targetDate, nodeDate.getTime() - targetDate.getTime(), pos)
-        if (nodeDate > targetDate) {
-          // console.log('nodeDate > targetDate', nodeDate.getTime() - targetDate.getTime(), (prev_node_date? prev_node_date.getTime() - targetDate.getTime() : 'no prev_node_date'))
-          if (Math.abs(nodeDate.getTime() - targetDate.getTime()) < 60*1000 || (prev_node_date && Math.abs(prev_node_date.getTime() - targetDate.getTime()) < 60*1000)) {
-            // console.log('aborting sort!')
-            insertPos = null;
-          } else {
-            insertPos = pos;
-          }
-          return false;
+    if (parent !== state.doc || !node.isBlock || !node.attrs) {
+      return false; // Don't traverse into child nodes
+    }
+    if (seenOwnNode && seenInsertionPoint) {
+      return false; // break after we've seen everything we need to see
+    }
+    
+    // Check if this is our own top-level block
+    if (pos >= topLevelBlock.from && pos <= topLevelBlock.to) {
+      console.log('found own node', node.attrs.blockId, node.attrs.timelineTime, node.content)
+      seenOwnNode = true;
+      return false;
+    }
+    
+    if (node.attrs.timelineTime) {
+      const nodeDate = new Date(node.attrs.timelineTime);
+      
+      // Check if this is the insertion point
+      if (!seenInsertionPoint && nodeDate > targetDate) {
+        seenInsertionPoint = true;
+        insertPos = pos;
+      }
+
+      
+      // If we've seen both insertion point and our own node, check minute range
+      if (seenInsertionPoint || seenOwnNode) {
+        const timeDiff = Math.abs(nodeDate.getTime() - targetDate.getTime());
+        if (timeDiff >= 60 * 1000) { // 1 minute = 60,000ms
+          console.log('found node outside minute range', node.attrs.blockId, node.attrs.timelineTime, node.content)
+          hasNodeOutsideMinuteRange = true;
         }
-        prev_node_date = nodeDate;
-      } else {
-        console.warn('sort: no timelineTime attr')
       }
     }
+    
     return false; // Don't traverse into child nodes
   });
+
+  console.log(blockInfo.blockId, 'seenInsertionPoint', seenInsertionPoint, 'hasNodeOutsideMinuteRange', hasNodeOutsideMinuteRange)
   
-  return typeof insertPos !== 'undefined' ? insertPos : state.doc.content.size;
+  // Return insertPos only if we found at least one node outside the minute range
+  // or if we didn't find an insertion point (append to end)
+  if (!seenInsertionPoint) {
+    return state.doc.content.size;
+  }
+  
+  return hasNodeOutsideMinuteRange ? insertPos : null;
 }
 
 /**
