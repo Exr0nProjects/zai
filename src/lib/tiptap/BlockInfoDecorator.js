@@ -14,10 +14,47 @@ export const BlockInfoDecorator = Extension.create({
       tooltip.id = 'block-info-tooltip';
       tooltip.className = 'block-info-tooltip';
       
-      const createdDate = new Date(attrs.createdAt);
-      const timeAgo = getTimeAgo(createdDate);
+      // Handle createdAt - it's an ISO string, not a timestamp
+      let createdDate = null;
+      if (attrs.createdAt) {
+        // Try parsing as ISO string first, then as timestamp
+        if (typeof attrs.createdAt === 'string' && attrs.createdAt.includes('T')) {
+          createdDate = new Date(attrs.createdAt);
+        } else {
+          // Handle as timestamp (could be string or number)
+          const timestamp = parseInt(attrs.createdAt);
+          createdDate = new Date(timestamp);
+        }
+      }
       
-      tooltip.innerHTML = `
+      // Handle timelineTime - could be ISO string or timestamp
+      let timelineDate = null;
+      if (attrs.timelineTime && attrs.timelineTime !== 'null') {
+        timelineDate = new Date(attrs.timelineTime);
+      }
+      
+      // Format the timestamps as raw date/time
+      const createdTimeDisplay = createdDate && !isNaN(createdDate.getTime()) ? 
+        createdDate.toLocaleString('en-US', { 
+          month: 'short', 
+          day: 'numeric', 
+          year: '2-digit',
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        }) : 'unknown';
+      const timelineTimeDisplay = timelineDate && !isNaN(timelineDate.getTime()) ? 
+        timelineDate.toLocaleString('en-US', { 
+          month: 'short', 
+          day: 'numeric', 
+          year: '2-digit',
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        }) : null;
+      
+      // Build tooltip content
+      let tooltipContent = `
         <div class="block-info-content">
           <div class="block-info-row">
             <span class="block-info-label">ID:</span>
@@ -25,14 +62,27 @@ export const BlockInfoDecorator = Extension.create({
           </div>
           <div class="block-info-row">
             <span class="block-info-label">Created:</span>
-            <span class="block-info-value">${timeAgo}</span>
-          </div>
+            <span class="block-info-value">${createdTimeDisplay}</span>
+          </div>`;
+      
+      // Add timelineTime row if it exists
+      if (timelineTimeDisplay) {
+        tooltipContent += `
+          <div class="block-info-row">
+            <span class="block-info-label">Timeline:</span>
+            <span class="block-info-value">${timelineTimeDisplay}</span>
+          </div>`;
+      }
+      
+      tooltipContent += `
           <div class="block-info-row">
             <span class="block-info-label">Parent:</span>
             <span class="block-info-value">${attrs.parentId ? attrs.parentId.slice(-8) : 'none'}</span>
           </div>
         </div>
       `;
+      
+      tooltip.innerHTML = tooltipContent;
       
       // Position tooltip aligned with the block element in left gutter
       const rect = blockElement.getBoundingClientRect();
@@ -157,6 +207,7 @@ export const BlockInfoDecorator = Extension.create({
               }
               
               const createdAt = target.getAttribute('data-created-at');
+              const timelineTime = target.getAttribute('data-timeline-time');
               const parentId = target.getAttribute('data-parent-id');
               
               if (blockId && createdAt) {
@@ -164,7 +215,8 @@ export const BlockInfoDecorator = Extension.create({
                 
                 const attrs = {
                   blockId,
-                  createdAt: parseInt(createdAt),
+                  createdAt: createdAt,
+                  timelineTime: timelineTime,
                   parentId: parentId !== 'none' ? parentId : null
                 };
                 

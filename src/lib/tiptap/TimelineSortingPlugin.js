@@ -178,8 +178,8 @@ function findBlockWithTimestamp(state, pos) {
  */
 function firstAncestorWithSiblings(state, startPos) {
   const $pos = state.doc.resolve(startPos+1);
-  console.log('firstAncestorWithSiblings', $pos.depth)
-  printPositions(state.doc.content, [startPos])
+  // console.log('firstAncestorWithSiblings', $pos.depth)
+  // printPositions(state.doc.content, [startPos])
   for (let depth = $pos.depth; depth >= 1; depth--) {
     const node = $pos.node(depth);
     const parent = $pos.node(depth - 1);
@@ -213,33 +213,29 @@ function firstAncestorWithSiblings(state, startPos) {
  */
 function findTimelineInsertionPosition(state, timelineTime) {
   const targetDate = new Date(timelineTime);
-  let insertPos = state.doc.content.size;
+  let insertPos = null;
 
-  console.log(state.doc.content)
+  // console.log('sorting!', state.doc.content)
+  // console.log('target date', targetDate)
   
   state.doc.descendants((node, pos, parent, index) => {
+    if (insertPos !== null) return false;
     if (parent === state.doc && node.isBlock && node.attrs) {
       if (node.attrs.timelineTime) {
         const nodeDate = new Date(node.attrs.timelineTime);
+        // console.log('compare dates', nodeDate, 'vs', targetDate, nodeDate > targetDate, pos)
         if (nodeDate > targetDate) {
           insertPos = pos;
-          return false; // Stop traversal
+          return false;
         }
-      } else if (node.attrs.createdAt) {
-        const nodeDate = node.attrs.createdAt.includes('T') 
-          ? new Date(node.attrs.createdAt)
-          : new Date(parseInt(node.attrs.createdAt));
-        
-        if (nodeDate > targetDate) {
-          insertPos = pos;
-          return false; // Stop traversal
-        }
+      } else {
+        console.warn('sort: no timelineTime attr')
       }
     }
     return false; // Don't traverse into child nodes
   });
   
-  return insertPos;
+  return insertPos !== null ? insertPos : state.doc.content.size;
 }
 
 /**
@@ -250,30 +246,34 @@ function moveBlockToTimelinePosition(view, blockInfo) {
 
   const { state } = view;
   const tr = state.tr;
-  console.log('moveBlockToTimelinePosition', blockInfo)
+  // console.log('moveBlockToTimelinePosition', blockInfo)
   
   const topLevelBlock = firstAncestorWithSiblings(state, blockInfo.pos);
-  console.log('topLevelBlock', topLevelBlock)
+  // console.log('topLevelBlock', topLevelBlock)
   if (!topLevelBlock) return;
   
   const insertPos = findTimelineInsertionPosition(state, blockInfo.timelineTime);
 
-  console.log('moving ', blockInfo.blockId, blockInfo.timelineTime, 'from', topLevelBlock.from, topLevelBlock.to, 'to', insertPos)
+  // console.log('moving ', blockInfo.blockId, blockInfo.timelineTime, 'from', topLevelBlock.from, topLevelBlock.to, 'to', insertPos)
   
   // Don't move if it's already in the right position
   if (insertPos >= topLevelBlock.from && insertPos <= topLevelBlock.to) return;
   if (topLevelBlock.from >= topLevelBlock.to) return;
 
+  // console.log('passed invalid ranges cehck')
+
   const slice = state.doc.slice(topLevelBlock.from, topLevelBlock.to + 1);
   if (slice.size === 0) return;
+  // console.log('passed slice check', slice)
 
-  printPositions(state.doc.content, [topLevelBlock.from, topLevelBlock.to])
-  printPositions(state.doc.content, [insertPos])
+  // printPositions(state.doc.content, [topLevelBlock.from, topLevelBlock.to])
+  // printPositions(state.doc.content, [insertPos])
   
   if (insertPos > topLevelBlock.to) {
     tr.insert(insertPos, slice.content);
     tr.deleteRange(Math.max(topLevelBlock.from-1, 0), topLevelBlock.to);
   } else {
+    // console.log('sorting backwards', topLevelBlock.from, topLevelBlock.to, insertPos)
     tr.deleteRange(Math.max(topLevelBlock.from-1, 0), topLevelBlock.to);
     tr.insert(insertPos, slice.content);
   }

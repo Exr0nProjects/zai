@@ -109,6 +109,20 @@ export const TimestampPlugin = Extension.create({
             return null;
           }
           
+          // Skip processing for our own timestamp transactions to prevent infinite loops
+          const isTimestampTransaction = transactions.some(tr => tr.getMeta('zai-idRelabel'));
+          if (isTimestampTransaction) {
+            if (LOG) console.log('🕒 TimestampPlugin skipping own timestamp transaction');
+            return null;
+          }
+          
+          // Skip processing for Y.js collaboration transactions
+          const isCollabTransaction = transactions.some(tr => tr.getMeta('y-sync$'));
+          if (isCollabTransaction) {
+            if (LOG) console.log('🕒 TimestampPlugin skipping Y.js collaboration transaction');
+            return null;
+          }
+          
           let tr = null;
           const targetNodeTypes = ['paragraph', 'heading', 'listItem', 'taskItem', 'bulletList', 'taskList'];
           const debugMode = window.debugNewBlocks || false;

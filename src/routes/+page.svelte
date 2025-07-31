@@ -308,7 +308,9 @@
   // Trigger jump behavior when user logs in
   $: if ($user && editor) {
     setTimeout(() => {
-      focusAtEnd();
+      if (hasNonEmptyContent()) {
+        focusAtEnd();
+      }
     }, 800); // Extra delay to ensure editor is fully loaded
   }
   
@@ -758,17 +760,6 @@
         ydoc.getMap('config').set('initialContentLoaded', true);
         editor.commands.setContent(getInitialContent());
         
-        // Focus the editor after initialization (TimestampPlugin will handle IDs automatically)
-        setTimeout(() => {
-          editor.commands.focus();
-          // Auto-trigger pin button behavior on load with longer delay
-          setTimeout(() => {
-            // Only scroll to end if document has meaningful content
-            if (hasNonEmptyContent()) {
-              focusAtEnd();
-            }
-          }, 50);
-        }, 50);
       }
     });
     
@@ -1318,7 +1309,7 @@
 
 {#if dev}
   <div class="fixed top-4 right-4 z-50 bg-accent-light text-white px-2 py-1 rounded text-xs font-mono pointer-events-none">
-    fix-empty-blocks-infinite-loops
+    prevent-infinite-loops
   </div>
 {/if}
 
