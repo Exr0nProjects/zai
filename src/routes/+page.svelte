@@ -1309,7 +1309,7 @@
 
 {#if dev}
   <div class="fixed top-4 right-4 z-50 bg-accent-light text-white px-2 py-1 rounded text-xs font-mono pointer-events-none">
-    prevent-infinite-loops
+    smart-timestamp-sorting
   </div>
 {/if}
 

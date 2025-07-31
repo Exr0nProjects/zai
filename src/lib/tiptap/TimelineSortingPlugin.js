@@ -136,8 +136,25 @@ export const TimelineSortingPlugin = Extension.create({
         view(view) {
           editorView = view;
           
+          // Queue all existing blocks with timelineTime for initial sort
+          view.state.doc.descendants((node) => {
+            if (node.isBlock && node.attrs?.blockId && node.attrs?.timelineTime) {
+              addBlockToSortQueue(node.attrs.blockId);
+            }
+          });
+          
           return {
             update(view, prevState) {
+              // Add block to sort queue when cursor enters it
+              const $pos = view.state.selection.$from;
+              for (let depth = $pos.depth; depth >= 0; depth--) {
+                const node = $pos.node(depth);
+                if (node.isBlock && node.attrs?.blockId && node.attrs?.timelineTime) {
+                  addBlockToSortQueue(node.attrs.blockId);
+                  break;
+                }
+              }
+              
               // Process sort queue - each sort will trigger another update
               sortFromQueue();
             },
@@ -210,24 +227,34 @@ function firstAncestorWithSiblings(state, startPos) {
 
 /**
  * Find where to insert a block based on timeline order
+ * returns null if the target date is already there, ie. there are multiple blocks w same timestamp
  */
-function findTimelineInsertionPosition(state, timelineTime) {
-  const targetDate = new Date(timelineTime);
-  let insertPos = null;
+function findTimelineInsertionPosition(state, blockInfo) {
+  const targetDate = new Date(blockInfo.timelineTime);
+  let insertPos;
 
   // console.log('sorting!', state.doc.content)
   // console.log('target date', targetDate)
+
+  let prev_node_date;
   
   state.doc.descendants((node, pos, parent, index) => {
-    if (insertPos !== null) return false;
+    if (typeof insertPos !== 'undefined') return false;
     if (parent === state.doc && node.isBlock && node.attrs) {
       if (node.attrs.timelineTime) {
         const nodeDate = new Date(node.attrs.timelineTime);
-        // console.log('compare dates', nodeDate, 'vs', targetDate, nodeDate > targetDate, pos)
+        // console.log('compare dates', nodeDate, 'vs', targetDate, nodeDate > targetDate, nodeDate.getTime() - targetDate.getTime(), pos)
         if (nodeDate > targetDate) {
-          insertPos = pos;
+          // console.log('nodeDate > targetDate', nodeDate.getTime() - targetDate.getTime(), (prev_node_date? prev_node_date.getTime() - targetDate.getTime() : 'no prev_node_date'))
+          if (Math.abs(nodeDate.getTime() - targetDate.getTime()) < 60*1000 || (prev_node_date && Math.abs(prev_node_date.getTime() - targetDate.getTime()) < 60*1000)) {
+            // console.log('aborting sort!')
+            insertPos = null;
+          } else {
+            insertPos = pos;
+          }
           return false;
         }
+        prev_node_date = nodeDate;
       } else {
         console.warn('sort: no timelineTime attr')
       }
@@ -235,7 +262,7 @@ function findTimelineInsertionPosition(state, timelineTime) {
     return false; // Don't traverse into child nodes
   });
   
-  return insertPos !== null ? insertPos : state.doc.content.size;
+  return typeof insertPos !== 'undefined' ? insertPos : state.doc.content.size;
 }
 
 /**
@@ -252,7 +279,26 @@ function moveBlockToTimelinePosition(view, blockInfo) {
   // console.log('topLevelBlock', topLevelBlock)
   if (!topLevelBlock) return;
   
-  const insertPos = findTimelineInsertionPosition(state, blockInfo.timelineTime);
+  const insertPos = findTimelineInsertionPosition(state, blockInfo);
+  if (insertPos === null) return; // abort sort if there are multiple blocks with the same timestamp
+
+  // Don't move if target position has the same timestamp (avoid thrashing between same-time blocks)
+  const targetDate = new Date(blockInfo.timelineTime);
+  let shouldSkipMove = false;
+  
+  state.doc.descendants((node, pos) => {
+    if (pos === insertPos && node.isBlock && node.attrs?.timelineTime) {
+      const nodeDate = new Date(node.attrs.timelineTime);
+      // console.log('nodeDate', nodeDate.getTime(), 'targetDate', targetDate.getTime(), nodeDate.getTime() === targetDate.getTime())
+      if (nodeDate.getTime() === targetDate.getTime()) {
+        shouldSkipMove = true;
+        return false; // Stop traversal
+      }
+    }
+    return true; // Continue traversal
+  });
+  
+  if (shouldSkipMove) return;
 
   // console.log('moving ', blockInfo.blockId, blockInfo.timelineTime, 'from', topLevelBlock.from, topLevelBlock.to, 'to', insertPos)
   
