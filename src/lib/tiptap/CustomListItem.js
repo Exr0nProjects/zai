@@ -46,6 +46,36 @@ export function parseMarkdownListItem(line) {
   }
 }
 
+// Helper functions outside the node definition
+function getCurrentIndentLevel(state, nodeName) {
+  const { from } = state.selection;
+  const $pos = state.doc.resolve(from);
+  
+  // Find customListItem parent
+  for (let depth = $pos.depth; depth >= 0; depth--) {
+    const node = $pos.node(depth);
+    if (node.type.name === nodeName) {
+      return node.attrs.indentLevel;
+    }
+  }
+  return 0;
+}
+
+function getMaxIndentLevel(state, nodeName) {
+  const { from } = state.selection;
+  const $pos = state.doc.resolve(from);
+  
+  // Find parent custom list item
+  for (let depth = $pos.depth - 1; depth >= 0; depth--) {
+    const parentNode = $pos.node(depth);
+    if (parentNode.type.name === nodeName) {
+      return parentNode.attrs.indentLevel + 1;
+    }
+  }
+  
+  return 5; // Max indent level when no parent
+}
+
 // Custom list item node
 export const CustomListItem = Node.create({
   name: 'customListItem',
@@ -162,7 +192,7 @@ export const CustomListItem = Node.create({
           class: 'custom-list-item',
           style: `margin-left: ${paddingLeft}rem;`,
         }),
-        ['span', { class: 'list-bullet', style: 'margin-right: 0.5rem;' }, '•'],
+        ['span', { class: 'list-bullet' }, '•'],
         ['span', { class: 'list-content' }, 0],
       ];
     } else {
@@ -171,7 +201,6 @@ export const CustomListItem = Node.create({
       const isDropped = checkboxState === 'dropped';
       
       const checkboxClass = isDropped ? 'dropped' : (isChecked ? 'done' : 'todo');
-      const checkboxStyle = `margin-right: 0.5rem; opacity: ${isDropped ? '0.5' : '1'};`;
       
       return [
         'li',
@@ -180,23 +209,31 @@ export const CustomListItem = Node.create({
           style: `margin-left: ${paddingLeft}rem;`,
         }),
         [
-          'label',
-          { style: 'display: flex; align-items: flex-start; width: 100%;' },
-          [
-            'input',
-            {
-              type: 'checkbox',
-              checked: isChecked,
-              disabled: isDropped,
-              class: 'task-checkbox',
-              style: checkboxStyle,
-              'data-checkbox-state': checkboxState,
-            }
-          ],
-          ['span', { class: 'list-content', style: isDropped ? 'text-decoration: line-through; opacity: 0.6;' : '' }, 0],
+          'input',
+          {
+            type: 'checkbox',
+            checked: isChecked,
+            disabled: isDropped,
+            class: 'task-checkbox custom-list-checkbox',
+            'data-checkbox-state': checkboxState,
+            'data-block-id': node.attrs.blockId,
+          }
         ],
+        ['span', { class: 'list-content', style: isDropped ? 'text-decoration: line-through; opacity: 0.6;' : '' }, 0],
       ];
     }
+  },
+  
+  addDOMEventListeners() {
+    return {
+      click: (view, event) => {
+        if (event.target.classList.contains('custom-list-checkbox')) {
+          event.preventDefault();
+          return this.editor.commands.toggleCheckbox();
+        }
+        return false;
+      },
+    };
   },
   
   addCommands() {
@@ -284,13 +321,13 @@ export const CustomListItem = Node.create({
       
       indentListItem: () => ({ tr, state, dispatch }) => {
         return this.editor.commands.updateAttributes(this.name, {
-          indentLevel: Math.min(this.getMaxIndentLevel(state), this.getCurrentIndentLevel(state) + 1)
+          indentLevel: Math.min(getMaxIndentLevel(state, this.name), getCurrentIndentLevel(state, this.name) + 1)
         });
       },
       
       outdentListItem: () => ({ tr, state, dispatch }) => {
         return this.editor.commands.updateAttributes(this.name, {
-          indentLevel: Math.max(0, this.getCurrentIndentLevel(state) - 1)
+          indentLevel: Math.max(0, getCurrentIndentLevel(state, this.name) - 1)
         });
       },
     };
@@ -372,36 +409,6 @@ export const CustomListItem = Node.create({
         },
       }),
     ];
-  },
-  
-  // Helper methods
-  getCurrentIndentLevel(state) {
-    const { from } = state.selection;
-    const $pos = state.doc.resolve(from);
-    
-    // Find customListItem parent
-    for (let depth = $pos.depth; depth >= 0; depth--) {
-      const node = $pos.node(depth);
-      if (node.type.name === this.name) {
-        return node.attrs.indentLevel;
-      }
-    }
-    return 0;
-  },
-  
-  getMaxIndentLevel(state) {
-    const { from } = state.selection;
-    const $pos = state.doc.resolve(from);
-    
-    // Find parent custom list item
-    for (let depth = $pos.depth - 1; depth >= 0; depth--) {
-      const parentNode = $pos.node(depth);
-      if (parentNode.type.name === this.name) {
-        return parentNode.attrs.indentLevel + 1;
-      }
-    }
-    
-    return 5; // Max indent level when no parent
   },
 });
 

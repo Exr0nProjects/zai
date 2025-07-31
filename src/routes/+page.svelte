@@ -776,6 +776,8 @@
         updateDocumentTitle();
       });
       
+
+      
       // Initial tag extraction and title update
       setTimeout(() => {
         extractTags();
@@ -1118,16 +1120,31 @@
     if (editor) {
       editor.commands.focus();
       
-      // Check if we're already in a custom list item to preserve indent level
+      // Check if we're already in a custom list item
       const { from } = editor.state.selection;
-      const node = editor.state.doc.nodeAt(from);
-      const currentIndent = (node && node.type.name === 'customListItem') ? node.attrs.indentLevel : 0;
+      const $pos = editor.state.doc.resolve(from);
       
-      editor.commands.setCustomListItem({
-        listType: 'checkbox',
-        indentLevel: currentIndent,
-        checkboxState: 'todo'
-      });
+      // Find if we're inside a customListItem
+      let inCustomList = false;
+      for (let depth = $pos.depth; depth >= 0; depth--) {
+        const node = $pos.node(depth);
+        if (node.type.name === 'customListItem') {
+          inCustomList = true;
+          break;
+        }
+      }
+      
+      if (inCustomList) {
+        // Toggle off: convert to paragraph
+        editor.commands.setParagraph();
+      } else {
+        // Toggle on: create custom list item
+        editor.commands.setCustomListItem({
+          listType: 'checkbox',
+          indentLevel: 0,
+          checkboxState: 'todo'
+        });
+      }
     }
   }
   
@@ -1313,7 +1330,7 @@
 
 {#if dev}
   <div class="fixed top-4 right-4 z-50 bg-accent-light text-white px-2 py-1 rounded text-xs font-mono pointer-events-none">
-    list-system-fixed
+    list-fully-functional
   </div>
 {/if}
 
@@ -2096,6 +2113,7 @@
     position: relative;
     transition: all 0.2s ease;
     margin-top: 0.25rem;
+    margin-right: 0.5rem;
   }
 
   :global(.custom-list-item.task-item.done .task-checkbox) {
