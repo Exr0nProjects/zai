@@ -89,6 +89,25 @@ export const serializeToMarkdown = (content) => {
         markdown += '---\n';
         break;
         
+      case 'customListItem':
+        // Skip hidden custom list items
+        if (node.attrs && node.attrs.blockId && isBlockHidden(node.attrs.blockId)) {
+          return;
+        }
+        
+        const { indentLevel, listType, checkboxState } = node.attrs;
+        const indent = '  '.repeat(indentLevel); // 2 spaces per indent level
+        
+        let marker = '- ';
+        if (listType === 'checkbox') {
+          const checkbox = checkboxState === 'done' ? '[x]' : 
+                          checkboxState === 'dropped' ? '[-]' : '[ ]';
+          marker = `- ${checkbox} `;
+        }
+        
+        markdown += indent + marker + processTextContent(node) + '\n';
+        break;
+        
       default:
         // Handle other nodes including listItem
         if (node.content) {

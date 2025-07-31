@@ -177,30 +177,41 @@ const parseMarkdown = (text, schema) => {
       continue;
     }
     
-    // Parse task lists
-    const taskMatch = line.match(/^(\t*)([-*+])\s+\[([x ])\]\s*(.*)$/);
+    // Parse task lists (checkbox lists) - convert to customListItem
+    const taskMatch = line.match(/^(\s*)([-*+])\s*\[([x\- ])\]\s*(.*)$/);
     if (taskMatch) {
-      const { listNodes, nextIndex } = parseList(lines, i, 'task', schema);
-      nodes.push(...listNodes);
-      i = nextIndex;
+      const indentLevel = Math.floor(taskMatch[1].length / 2); // 2 spaces = 1 indent
+      const checkboxChar = taskMatch[3];
+      const text = taskMatch[4];
+      
+      let checkboxState = 'todo';
+      if (checkboxChar === 'x' || checkboxChar === 'X') checkboxState = 'done';
+      else if (checkboxChar === '-') checkboxState = 'dropped';
+      
+      const inlineContent = parseInlineMarkdown(text, schema);
+      nodes.push(schema.nodes.customListItem.create({
+        listType: 'checkbox',
+        indentLevel,
+        checkboxState
+      }, inlineContent));
+      
+      i++;
       continue;
     }
     
-    // Parse bullet lists
-    const bulletMatch = line.match(/^(\t*)([-*+])\s+(.*)$/);
-    if (bulletMatch) {
-      const { listNodes, nextIndex } = parseList(lines, i, 'bullet', schema);
-      nodes.push(...listNodes);
-      i = nextIndex;
-      continue;
-    }
-    
-    // Parse ordered lists
-    const orderedMatch = line.match(/^(\t*)(\d+)\.\s+(.*)$/);
-    if (orderedMatch) {
-      const { listNodes, nextIndex } = parseList(lines, i, 'ordered', schema);
-      nodes.push(...listNodes);
-      i = nextIndex;
+    // Parse bullet lists - convert to customListItem
+    const bulletMatch = line.match(/^(\s*)([-*+])\s*(.*)$/);
+    if (bulletMatch && !taskMatch) { // Make sure it's not a task list
+      const indentLevel = Math.floor(bulletMatch[1].length / 2); // 2 spaces = 1 indent
+      const text = bulletMatch[3];
+      
+      const inlineContent = parseInlineMarkdown(text, schema);
+      nodes.push(schema.nodes.customListItem.create({
+        listType: 'bullet',
+        indentLevel
+      }, inlineContent));
+      
+      i++;
       continue;
     }
     

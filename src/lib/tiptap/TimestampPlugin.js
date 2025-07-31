@@ -124,7 +124,7 @@ export const TimestampPlugin = Extension.create({
           }
           
           let tr = null;
-          const targetNodeTypes = ['paragraph', 'heading', 'listItem', 'taskItem', 'bulletList', 'taskList'];
+          const targetNodeTypes = ['paragraph', 'heading', 'customListItem', 'blockquote', 'codeBlock', 'horizontalRule'];
           const debugMode = window.debugNewBlocks || false;
 
           // Track seen blockIds to detect duplicates
@@ -170,6 +170,7 @@ export const TimestampPlugin = Extension.create({
             
             // Create temporary ID map to track newly assigned IDs within this transaction
             const tempIdMap = new Map();
+            const parentChildUpdates = new Map(); // Track parent updates needed
             
             nodesToUpdate.forEach(({ pos, node, reason, oldBlockId, newBlockId, newTimestamp }) => {
               // const parentId = oldBlockId || getParentId(newState.doc, pos, tempIdMap);
@@ -183,16 +184,26 @@ export const TimestampPlugin = Extension.create({
                 console.log(`🕒 TimestampPlugin preserving existing timelineTime:`, node.attrs.timelineTime, 'for block:', newBlockId.slice(-8));
               }
               
+              // Preserve existing children array for all nodes (now part of common interface)
+              const preservedChildren = node.attrs.children || [];
+              
               tr.setNodeMarkup(pos, null, {
                 ...node.attrs,
                 blockId: newBlockId,
                 createdAt: newTimestamp,
                 timelineTime: preservedTimelineTime,
                 parentId,
+                children: preservedChildren,
                 debugNew: debugMode,
               });
 
-              tr.setMeta('zai-idRelabel', true);
+              // Track parent-child relationship updates needed
+              if (parentId) {
+                if (!parentChildUpdates.has(parentId)) {
+                  parentChildUpdates.set(parentId, new Set());
+                }
+                parentChildUpdates.get(parentId).add(newBlockId);
+              }
               
               if (LOG) console.log(`🆕 ${reason}: ${node.type.name} at pos ${pos}`, {
                 oldBlockId: oldBlockId?.slice(-8) || 'none',
@@ -201,6 +212,25 @@ export const TimestampPlugin = Extension.create({
                 timestamp: newTimestamp
               });
             });
+            
+            // Update parent children arrays in the same transaction
+            parentChildUpdates.forEach((childIds, parentId) => {
+              newState.doc.descendants((node, pos) => {
+                if (node.attrs && node.attrs.blockId === parentId) {
+                  const currentChildren = node.attrs.children || [];
+                  const newChildren = [...new Set([...currentChildren, ...childIds])]; // Merge and deduplicate
+                  
+                  tr.setNodeMarkup(pos, null, {
+                    ...node.attrs,
+                    children: newChildren
+                  });
+                  
+                  return false; // Stop traversal for this parent
+                }
+              });
+            });
+
+            tr.setMeta('zai-idRelabel', true);
           }
           
           return tr;

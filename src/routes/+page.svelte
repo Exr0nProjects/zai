@@ -6,13 +6,8 @@
   import {
     ExtendedHeading,
     ExtendedParagraph,
-    ExtendedBulletList,
-    ExtendedTaskList,
-    ExtendedListItem,
-    ExtendedTaskItem,
     ExtendedBlockquote,
     ExtendedHorizontalRule,
-    ExtendedOrderedList,
     ExtendedCodeBlock
   } from '$lib/tiptap/ExtendedNodes.js';
   import Bold from '@tiptap/extension-bold';
@@ -52,6 +47,7 @@
   import { PatternAnnotationPlugin } from '$lib/tiptap/PatternAnnotationPlugin.js';
   import { TimeGutterPlugin } from '$lib/tiptap/TimeGutterPlugin.js';
   import { TimelineSortingPlugin } from '$lib/tiptap/TimelineSortingPlugin.js';
+  import { CustomListItem } from '$lib/tiptap/CustomListItem.js';
   
   // Debug flags (change these in code as needed)
   const debugNewBlocks = false; // Set to true to show blue borders on new blocks
@@ -375,15 +371,6 @@
     editor = new Editor({
       element: element,
       extensions: [
-        // TaskList first to handle `- [ ]` before BulletList handles `- `
-        ExtendedTaskList,
-        ExtendedTaskItem.configure({
-          nested: true,
-        }),
-        
-        // BulletList AFTER TaskList so TaskList gets priority for `- [ ]`
-        ExtendedBulletList,
-        
         // Essential TipTap extensions (no History to avoid Y.js conflicts)
         Document,
         ExtendedParagraph,
@@ -402,10 +389,8 @@
         ExtendedBlockquote,
         ExtendedHorizontalRule,
         
-        // Lists
-        ExtendedOrderedList,
-        ExtendedListItem,
-        ListKeymap, // Provides Tab/Shift+Tab behavior for nested lists
+        // Custom list item with indentation support (replaces all old list types)
+        CustomListItem,
         
         // UI
         Dropcursor,
@@ -506,6 +491,7 @@
           parsers: PARSERS,
           throttleDelay: 100, // Process patterns every 100ms while typing
         }),
+        CustomListItem,
       ],
       // No initial content - Y.js will manage document state
     });
@@ -1131,9 +1117,21 @@
   function addTodoList() {
     if (editor) {
       editor.commands.focus();
-      editor.commands.toggleTaskList();
+      
+      // Check if we're already in a custom list item to preserve indent level
+      const { from } = editor.state.selection;
+      const node = editor.state.doc.nodeAt(from);
+      const currentIndent = (node && node.type.name === 'customListItem') ? node.attrs.indentLevel : 0;
+      
+      editor.commands.setCustomListItem({
+        listType: 'checkbox',
+        indentLevel: currentIndent,
+        checkboxState: 'todo'
+      });
     }
   }
+  
+
   
   function toggleSearchExpanded() {
     isSearchExpanded = !isSearchExpanded;
@@ -1309,7 +1307,13 @@
 
 {#if dev}
   <div class="fixed top-4 right-4 z-50 bg-accent-light text-white px-2 py-1 rounded text-xs font-mono pointer-events-none">
-    smart-timestamp-sorting
+    custom-list-items
+  </div>
+{/if}
+
+{#if dev}
+  <div class="fixed top-4 right-4 z-50 bg-accent-light text-white px-2 py-1 rounded text-xs font-mono pointer-events-none">
+    list-system-fixed
   </div>
 {/if}
 
@@ -2063,6 +2067,96 @@
          .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child) + 
          p:has(> br.ProseMirror-trailingBreak:only-child) + *) {
     padding-top: 2.7rem;
+  }
+  
+  /* Custom List Item Styles */
+  :global(.custom-list-item) {
+    display: flex;
+    align-items: flex-start;
+    margin: 0.25rem 0;
+    list-style: none;
+  }
+
+  :global(.custom-list-item .list-bullet) {
+    color: #666;
+    font-weight: bold;
+    margin-right: 0.5rem;
+    user-select: none;
+  }
+
+  :global(.custom-list-item.task-item .task-checkbox) {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    background-color: var(--bg);
+    position: relative;
+    transition: all 0.2s ease;
+    margin-top: 0.25rem;
+  }
+
+  :global(.custom-list-item.task-item.done .task-checkbox) {
+    background-color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  :global(.custom-list-item.task-item.done .task-checkbox::after) {
+    content: '✓';
+    font-family: 'Courier New', monospace;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -43%);
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+  }
+
+  :global(.custom-list-item.task-item.dropped .task-checkbox) {
+    background-color: #ccc;
+    border-color: #ccc;
+    cursor: not-allowed;
+  }
+
+  :global(.custom-list-item.task-item.dropped .task-checkbox::after) {
+    content: '×';
+    font-family: 'Courier New', monospace;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+  }
+
+  :global(.custom-list-item .list-content) {
+    flex: 1;
+    min-height: 1.5rem;
+  }
+
+  /* Debug styles for custom list items */
+  :global(.debug-new-block.custom-list-item) {
+    border: 2px solid blue !important;
+  }
+
+  :global(.debug-new-block-parent.custom-list-item) {
+    border: 2px dashed blue !important;
+  }
+
+  /* Dark mode support for custom lists */
+  @media (prefers-color-scheme: dark) {
+    :global(.custom-list-item .list-bullet) {
+      color: #aaa;
+    }
+    
+    :global(.custom-list-item.task-item.dropped .task-checkbox) {
+      background-color: #555;
+      border-color: #555;
+    }
   }
 </style>
 
