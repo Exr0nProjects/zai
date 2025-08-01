@@ -71,7 +71,7 @@
   
   // Mobile UI state
   let isSearchExpanded = false;
-  let keyboardHeight = 0;
+  let vpHeight = null;
   
   // Hidden blocks debug state
 
@@ -466,7 +466,7 @@
         }),
         
         TimelineMark,
-        BlockInfoDecorator,
+        ...window.innerWidth < 768 ? [] : [ BlockInfoDecorator ],
         TimestampPlugin, // Automatically adds timestamps without interfering with keymaps
         MarkdownClipboard, // Copy/cut as markdown instead of HTML
         MarkdownPaste, // Parse pasted markdown into proper nodes
@@ -748,6 +748,7 @@
       }
     });
     
+    const onMountCleanup = [];
     // Extract tags periodically
     if (editor) {
       const extractTags = async () => {
@@ -780,10 +781,10 @@
         extractTags();
         updateDocumentTitle();
       }, 1000);
-      
-      return () => {
+
+      onMountCleanup.push(() => {
         clearTimeout(window.tagExtractionTimeout);
-      };
+      });
     }
 
     // Set initial timeline position
@@ -794,30 +795,60 @@
     
     // Set up virtual keyboard detection for mobile
     const setupVirtualKeyboard = () => {
+      vpHeight = window.visualViewport.height;
       // Try VirtualKeyboard API first (Chrome Android)
       if ('virtualKeyboard' in navigator) {
+        console.log('overlaying content')
         navigator.virtualKeyboard.overlaysContent = true;
         navigator.virtualKeyboard.addEventListener('geometrychange', (event) => {
-          keyboardHeight = event.target.boundingRect.height;
+          vpHeight = event.target.boundingRect.height;
         });
       }
       // Fallback to visualViewport API for other browsers
       else if ('visualViewport' in window) {
-        const updateKeyboardHeight = () => {
-          const vpHeight = window.visualViewport.height;
-          const windowHeight = window.innerHeight;
-          keyboardHeight = Math.max(0, windowHeight - vpHeight);
+        console.log('update visualviewport ig')
+        const updateKeyboardHeight = (ev) => {
+          console.log('update visualviewport ig', ev)
+          ev.preventDefault();
+          ev.stopPropagation();
+          vpHeight = window.visualViewport.height;
+          // zoom out again to counteract the zoom in from the keyboard
+          if (ev.type == 'resize') {
+            window.visualViewport.scale = 1;
+          }
         };
+
+        const handleScrollTrigger = (ev) => {
+          console.log('handleScrollTrigger', ev)
+          // Check if the event target is within the editor-container
+          const editorContainer = ev.target.closest('.editor-container');
+          
+          // Only prevent the event if it's NOT within the editor container
+          if (!editorContainer) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            return false;
+          }
+          
+          // Allow the event if it's within the editor container
+          return true;
+        }
         
+        window.addEventListener('touchmove', handleScrollTrigger, { passive: false });
         window.visualViewport.addEventListener('resize', updateKeyboardHeight);
-        window.visualViewport.addEventListener('scroll', updateKeyboardHeight);
       }
+      console.log('setup virtual keyboard')
     };
-    
-    setupVirtualKeyboard();
+    console.log('hellollolool')
+    if (window.innerWidth < 768) {
+      setupVirtualKeyboard();
+    }
     
     return () => {
       clearInterval(timelineInterval);
+      for (let cleanup of onMountCleanup) {
+        cleanup();
+      }
     };
   });
 
@@ -1367,18 +1398,6 @@
   </div>
 </div>
 
-{#if dev}
-  <div class="fixed top-4 right-4 z-50 bg-accent-light text-white px-2 py-1 rounded text-xs font-mono pointer-events-none">
-    custom-list-items
-  </div>
-{/if}
-
-{#if dev}
-  <div class="fixed top-4 right-4 z-50 bg-accent-light text-white px-2 py-1 rounded text-xs font-mono pointer-events-none">
-    indent-styling-complete
-  </div>
-{/if}
-
 <!-- Editor with internal spacing -->
 <div class="bg-white editor-container">
   <div 
@@ -1400,7 +1419,7 @@
 <!-- Floating Bottom Controls -->
 <div 
   class="fixed left-0 right-0 z-50 pointer-events-none transition-all duration-300"
-  style="bottom: {keyboardHeight}px"
+  style={window.innerHeight > 768 ? "bottom: 0" : "top: calc(" + vpHeight + "px - 50px)"}
 >
   <div class="max-w-4xl mx-auto px-4 py-3 pointer-events-auto">
     
@@ -1705,17 +1724,25 @@
   </div>
 </div>
 
-<!-- Remove the modal dialog entirely since we'll use the pill for everything -->
-{#if false}
-  <!-- This modal code is now disabled -->
-{/if}
-
 <style>
   :global(:root) {
     --debug-borders: none; /* Change to "1px solid red" to show debug borders */
     --block-borders: none; /* Change to "1px solid #000" to show block borders */
     --block-hover-bg: none; /* Change to "rgba(0, 0, 0, 0.02)" to show hover background */
   }
+
+  @media (max-width: 768px) {
+    :global(body) {
+      position: fixed;
+      top: 0;
+    }
+    :global(main) {
+      overflow-x: hidden;
+      overflow-y: scroll;
+      border: 1px solid red;
+    }
+  }
+
 
   :global(.ProseMirror) {
     outline: none;
@@ -1942,21 +1969,6 @@
     border: 2px dashed blue !important;
   }
 
-  /* Dark mode support for custom lists */
-  @media (prefers-color-scheme: dark) {
-    :global(.custom-list-item.custom-bullet::before),
-    :global(.custom-list-item.custom-checkbox::before) {
-      color: #aaa;
-    }
-    
-    :global(.custom-list-item.custom-checkbox.checked::before) {
-      color: var(--accent-dark, #2563eb);
-    }
-    
-    :global(.custom-list-item.custom-checkbox.dropped::before) {
-      color: #ef4444;
-    }
-  }
 
   /* Block info tooltip styling */
   :global(.block-info-tooltip) {
@@ -1970,6 +1982,11 @@
     pointer-events: none;
     white-space: nowrap;
   }
+  /* @media (max-width: 768px) {
+    :global(.block-info-tooltip) {
+      display: none;
+    }
+  } */
 
   :global(.block-info-content) {
     display: flex;

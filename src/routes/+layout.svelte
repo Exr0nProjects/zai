@@ -61,6 +61,10 @@
   }
 </script>
 
+<svelte:head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+</svelte:head>
+
 {#if $isLoading}
   <div class="min-h-screen bg-gray-50 flex items-center justify-center">
     <div class="text-center">
