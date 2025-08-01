@@ -2,6 +2,17 @@ import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 
+// Flag to control parent bracket visibility
+let showParentBrackets = false;
+
+export function toggleParentBrackets(enabled) {
+  showParentBrackets = enabled;
+}
+
+export function isParentBracketsEnabled() {
+  return showParentBrackets;
+}
+
 export const BlockInfoDecorator = Extension.create({
   name: 'blockInfoDecorator',
 
@@ -133,6 +144,58 @@ export const BlockInfoDecorator = Extension.create({
       hovered.forEach(el => el.classList.remove('debug-hovered'));
     };
 
+    const createBracketElement = (attrs, view) => {
+      console.log('createBracketElement', attrs)
+      const container = document.createElement('div');
+      container.className = 'parent-bracket-widget';
+      
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('width', '20');
+      svg.setAttribute('height', '20');
+      svg.setAttribute('viewBox', '0 0 20 20');
+      svg.setAttribute('fill', 'none');
+      svg.setAttribute('stroke', 'currentColor');
+      svg.setAttribute('stroke-width', '1.5');
+      
+      if (attrs.parentId) {
+        // Check if parent exists in the document
+        const parentElement = document.querySelector(`[data-block-id="${attrs.parentId}"]`);
+        
+        if (parentElement) {
+          // Draw bracket connecting to parent
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', 'M16 2 L4 2 L4 10 L10 10');
+          path.setAttribute('stroke-linecap', 'round');
+          path.setAttribute('stroke-linejoin', 'round');
+          svg.appendChild(path);
+          
+          // Add small arrow
+          const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          arrow.setAttribute('d', 'M8 8 L10 10 L8 12');
+          arrow.setAttribute('stroke-linecap', 'round');
+          arrow.setAttribute('stroke-linejoin', 'round');
+          svg.appendChild(arrow);
+        } else {
+          // Parent not found, draw broken bracket
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', 'M16 2 L4 2 L4 10 L1 10');
+          path.setAttribute('stroke-linecap', 'round');
+          path.setAttribute('stroke-linejoin', 'round');
+          path.setAttribute('stroke-dasharray', '2,2');
+          svg.appendChild(path);
+        }
+      } else {
+        // No parent, draw line going off screen
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M16 10 L0 10');
+        path.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(path);
+      }
+      
+      container.appendChild(svg);
+      return container;
+    };
+
     // Track current hovered block to avoid unnecessary tooltip updates
     let currentHoveredBlock = null;
     
@@ -151,7 +214,7 @@ export const BlockInfoDecorator = Extension.create({
       return date.toLocaleDateString();
     };
     
-    const createDecorations = (state) => {
+    const createDecorations = (state, currentHoveredBlockId = null) => {
       const decorations = [];
       
       state.doc.descendants((node, pos) => {
@@ -163,7 +226,18 @@ export const BlockInfoDecorator = Extension.create({
             'data-created-at': node.attrs.createdAt,
             'data-parent-id': node.attrs.parentId || 'none',
           });
-                        decorations.push(decoration);
+          decorations.push(decoration);
+          
+          // Add parent bracket widget decoration if this is the hovered block
+          if (showParentBrackets && currentHoveredBlockId === node.attrs.blockId) {
+            const bracketWidget = Decoration.widget(pos, (view, getPos) => {
+              return createBracketElement(node.attrs, view);
+            }, {
+              side: -1, // Place before the node
+              key: `parent-bracket-${pos}`,
+            });
+            decorations.push(bracketWidget);
+          }
         }
       });
       
@@ -178,12 +252,22 @@ export const BlockInfoDecorator = Extension.create({
           init(config, state) {
             return {
               decorations: createDecorations(state),
+              hoveredBlockId: null,
             };
           },
           
           apply(tr, value, oldState, newState) {
+            let { hoveredBlockId } = value;
+            
+            // Check for hover updates from meta
+            const hoverMeta = tr.getMeta('blockInfoHover');
+            if (hoverMeta !== undefined) {
+              hoveredBlockId = hoverMeta;
+            }
+            
             return {
-              decorations: createDecorations(newState),
+              decorations: createDecorations(newState, hoveredBlockId),
+              hoveredBlockId,
             };
           },
         },
@@ -224,6 +308,9 @@ export const BlockInfoDecorator = Extension.create({
                 addHoverHighlight(target);
                 
                 showBlockTooltip(target, attrs);
+                // Update hover state for parent bracket decoration
+                const tr = view.state.tr.setMeta('blockInfoHover', blockId);
+                view.dispatch(tr);
                 // Highlight parent block if it exists
                 if (attrs.parentId) {
                   highlightParentBlock(attrs.parentId);
@@ -238,6 +325,9 @@ export const BlockInfoDecorator = Extension.create({
               hideBlockTooltip();
               clearHoverHighlights();
               clearParentHighlights();
+              // Clear hover state for parent bracket decoration
+              const tr = view.state.tr.setMeta('blockInfoHover', null);
+              view.dispatch(tr);
               return false;
             },
           },

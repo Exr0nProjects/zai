@@ -24,7 +24,7 @@
   import { SupabaseProvider } from '$lib/providers/SupabaseProvider.js';
   import { user, authActions } from '$lib/stores/auth.js';
   import { TimelineMark } from '$lib/tiptap/TimelineMark.js';
-  import { BlockInfoDecorator } from '$lib/tiptap/BlockInfoDecorator.js';
+  import { BlockInfoDecorator, toggleParentBrackets, isParentBracketsEnabled } from '$lib/tiptap/BlockInfoDecorator.js';
   import { TimestampPlugin } from '$lib/tiptap/TimestampPlugin.js';
   import { MarkdownClipboard, serializeToMarkdown } from '$lib/tiptap/MarkdownClipboard.js';
   import { MarkdownPaste } from '$lib/tiptap/MarkdownPaste.js';
@@ -51,6 +51,7 @@
   
   // Debug flags (change these in code as needed)
   const debugNewBlocks = false; // Set to true to show blue borders on new blocks
+  const debugParentBrackets = false; // Set to true to show parent relationship brackets
   
   // Online/offline detection
   let isOnline = true;
@@ -551,6 +552,17 @@
           }
         };
         
+        // Parent bracket debug controls
+        window.toggleParentBrackets = (enabled) => {
+          toggleParentBrackets(enabled !== undefined ? enabled : !isParentBracketsEnabled());
+          console.log(`🔗 Parent brackets ${isParentBracketsEnabled() ? 'enabled' : 'disabled'}`);
+          // Force editor update to show/hide brackets
+          if (editor) {
+            const tr = editor.state.tr.setMeta('forceUpdate', true);
+            editor.view.dispatch(tr);
+          }
+        };
+        
         window.getParsingContext = () => {
           if (editor && window.getContext) {
             const context = window.getContext();
@@ -860,9 +872,7 @@
         window.addEventListener('touchmove', handleScrollTrigger, { passive: false });
         window.visualViewport.addEventListener('resize', updateKeyboardHeight);
       }
-      console.log('setup virtual keyboard')
     };
-    console.log('hellollolool')
     if (window.innerWidth < 768) {
       setupVirtualKeyboard();
     }
@@ -1379,6 +1389,10 @@
   // Set debug flag on global window object for TimestampPlugin
   $: if (typeof window !== 'undefined') {
     window.debugNewBlocks = debugNewBlocks;
+    
+    // Initialize parent brackets based on debug flag
+    toggleParentBrackets(debugParentBrackets);
+    window.debugParentBrackets = debugParentBrackets;
   }
 </script>
 
@@ -1932,10 +1946,10 @@
 
   /* Custom List Item Styles - Override block-with-info padding/margins */
   @media (min-width: 768px) {
-  :global(.custom-list-item.block-with-info) {
-    position: relative;
-    padding: 0.25rem 0.5rem 0.25rem 1.25rem; /* Keep top/right/bottom padding, increase left for pseudo-element */
-    min-height: 1.5rem;
+    :global(.custom-list-item.block-with-info) {
+      position: relative;
+      padding: 0.25rem 0.5rem 0.25rem 1.25rem; /* Keep top/right/bottom padding, increase left for pseudo-element */
+      min-height: 1.5rem;
     }
   }
   @media (max-width: 768px) {

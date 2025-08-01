@@ -568,3 +568,28 @@ pill {
   position: relative;
 }
 
+/* Parent Bracket Widget Styling */
+.parent-bracket-widget {
+  position: absolute;
+  left: -120px; /* Position to the left of time gutter */
+  top: 2px;
+  width: 20px;
+  height: 20px;
+  color: rgba(0, 0, 0, 0.3);
+  user-select: none;
+  pointer-events: none;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+.parent-bracket-widget:hover {
+  opacity: 1;
+}
+
+/* Dark mode for parent bracket widget */
+@media (prefers-color-scheme: dark) {
+  .parent-bracket-widget {
+    color: rgba(255, 255, 255, 0.3);
+  }
+}
+
