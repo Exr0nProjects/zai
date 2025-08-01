@@ -4,6 +4,19 @@ import { generateBlockId, getCurrentTimestamp } from '../utils/snowflake.js';
 
 const LOG = false;
 
+// Helper function to check if a node is an empty top-level paragraph
+function isEmptyTopLevelParagraph(node, pos, doc) {
+  if (node.type.name !== 'paragraph') return false;
+  
+  // Check if it's at the top level (depth 0)
+  const resolved = doc.resolve(pos);
+  if (resolved.depth !== 0) return false;
+  
+  // Check if it's empty (no content or only whitespace)
+  const textContent = node.textContent || '';
+  return textContent.trim().length === 0;
+}
+
 // Helper function to find parent blockId with temporary ID lookup
 function getParentId(doc, pos, tempIdMap = new Map(), returnSelf = false) {
   // LLM: find previous sibling, or parent (if none), and use that blockId as oldBlockId 
@@ -196,7 +209,45 @@ export const TimestampPlugin = Extension.create({
             
             nodesToUpdate.forEach(({ pos, node, reason, oldBlockId, newBlockId, newTimestamp }) => {
               // const parentId = oldBlockId || getParentId(newState.doc, pos, tempIdMap);
-              const parentId = getParentId(newState.doc, pos, tempIdMap); // TODO: `paragraph \n - bullet` still paragraph is bullet's sibling, not the listitem?
+              let parentId = getParentId(newState.doc, pos, tempIdMap); // TODO: `paragraph \n - bullet` still paragraph is bullet's sibling, not the listitem?
+              
+              // Special case for duplicate blockIds: check if parent and its parent are both empty top-level paragraphs
+              if (reason === 'duplicate-id' && parentId) {
+                // Find the original node with the duplicate blockId
+                let originalNode = null;
+                let originalPos = null;
+                newState.doc.descendants((n, p) => {
+                  if (n.attrs?.blockId === oldBlockId && p !== pos) {
+                    originalNode = n;
+                    originalPos = p;
+                    return false; // Stop traversal
+                  }
+                });
+                
+                if (originalNode && originalPos !== null) {
+                  // Check if the original node is an empty top-level paragraph
+                  if (isEmptyTopLevelParagraph(originalNode, originalPos, newState.doc)) {
+                    // Check if the original node's parent is also an empty top-level paragraph
+                    if (originalNode.attrs?.parentId) {
+                      let originalParentNode = null;
+                      let originalParentPos = null;
+                      newState.doc.descendants((n, p) => {
+                        if (n.attrs?.blockId === originalNode.attrs.parentId) {
+                          originalParentNode = n;
+                          originalParentPos = p;
+                          return false; // Stop traversal
+                        }
+                      });
+                      
+                      if (originalParentNode && originalParentPos !== null && 
+                          isEmptyTopLevelParagraph(originalParentNode, originalParentPos, newState.doc)) {
+                        // Both parent and grandparent are empty top-level paragraphs, set parent to null
+                        parentId = null;
+                      }
+                    }
+                  }
+                }
+              }
               
               // Store the new ID in temp map for subsequent lookups
               tempIdMap.set(pos, newBlockId);
