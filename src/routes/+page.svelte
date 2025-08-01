@@ -481,10 +481,10 @@
         SearchHighlightPlugin,
         PatternAnnotationPlugin, // Hover annotations for patterns
         TimeGutterPlugin, // Time gutter on the left
-        TimelineSortingPlugin.configure({
-          enabled: true,
-          debugMode: true, // Set to true for debugging timeline sorting
-        }),
+        // TimelineSortingPlugin.configure({
+        //   enabled: true,
+        //   debugMode: true, // Set to true for debugging timeline sorting
+        // }),
         InlineParser.configure({
           enabled: true,
           debugMode: true, // Set to true for debugging
@@ -1132,13 +1132,44 @@
       }
       
       if (inCustomList) {
-        // Toggle off: convert to paragraph
-        editor.commands.setParagraph();
+        // Toggle listType: if already checkbox, convert to bullet; if bullet, convert to checkbox
+        let currentNode = null;
+        for (let depth = $pos.depth; depth >= 0; depth--) {
+          const node = $pos.node(depth);
+          if (node.type.name === 'customListItem') {
+            currentNode = node;
+            break;
+          }
+        }
+        
+        if (currentNode) {
+          const newListType = currentNode.attrs.listType === 'checkbox' ? 'bullet' : 'checkbox';
+          editor.commands.setCustomListItem({
+            listType: newListType,
+            indentLevel: currentNode.attrs.indentLevel,
+            checkboxState: 'todo' // Reset to todo when switching to checkbox
+          });
+        }
       } else {
-        // Toggle on: create custom list item
+        // Toggle on: create custom list item preserving current context
+        // Try to get current indent level from any nearby custom list items
+        let currentIndent = 0;
+        
+        // Look for previous sibling custom list items to inherit indent level
+        const parent = $pos.parent;
+        const index = $pos.index();
+        
+        for (let i = index - 1; i >= 0; i--) {
+          const sibling = parent.child(i);
+          if (sibling.type.name === 'customListItem') {
+            currentIndent = sibling.attrs.indentLevel || 0;
+            break;
+          }
+        }
+        
         editor.commands.setCustomListItem({
           listType: 'checkbox',
-          indentLevel: 0,
+          indentLevel: currentIndent,
           checkboxState: 'todo'
         });
       }

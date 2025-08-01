@@ -65,15 +65,27 @@ function getMaxIndentLevel(state, nodeName) {
   const { from } = state.selection;
   const $pos = state.doc.resolve(from);
   
-  // Find parent custom list item
-  for (let depth = $pos.depth - 1; depth >= 0; depth--) {
-    const parentNode = $pos.node(depth);
-    if (parentNode.type.name === nodeName) {
-      return parentNode.attrs.indentLevel + 1;
+  // Find current customListItem to get its parentId
+  for (let depth = $pos.depth; depth >= 0; depth--) {
+    const node = $pos.node(depth);
+    if (node.type.name === nodeName && node.attrs.parentId) {
+      // Find the parent node by its blockId
+      let parentNode = null;
+      state.doc.descendants((descendantNode) => {
+        if (descendantNode.attrs?.blockId === node.attrs.parentId) {
+          parentNode = descendantNode;
+          return false; // Stop traversal
+        }
+      });
+      
+      // Only allow indenting if parent is also a customListItem
+      if (parentNode && parentNode.type.name === nodeName) {
+        return (parentNode.attrs.indentLevel || 0) + 1;
+      }
     }
   }
   
-  return 5; // Max indent level when no parent
+  return 0; // Can't indent if no parent or parent isn't a list item
 }
 
 // Custom list item node
@@ -227,10 +239,33 @@ export const CustomListItem = Node.create({
   addDOMEventListeners() {
     return {
       click: (view, event) => {
-        if (event.target.classList.contains('custom-list-checkbox')) {
+        console.log('CustomListItem click event:', {
+          target: event.target,
+          classList: Array.from(event.target.classList),
+          tagName: event.target.tagName,
+          parentElement: event.target.parentElement,
+          customListCheckbox: event.target.classList.contains('custom-list-checkbox'),
+          isCheckbox: event.target.type === 'checkbox'
+        });
+        
+        // Check for direct checkbox click
+        if (event.target.classList.contains('custom-list-checkbox') || event.target.type === 'checkbox') {
+          console.log('Direct checkbox click detected');
           event.preventDefault();
           return this.editor.commands.toggleCheckbox();
         }
+        
+        // Check for clicks on the list item that should toggle checkbox
+        const listItem = event.target.closest('.custom-list-item.task-item');
+        if (listItem) {
+          const checkbox = listItem.querySelector('.custom-list-checkbox');
+          if (checkbox) {
+            console.log('List item click detected, toggling checkbox');
+            event.preventDefault();
+            return this.editor.commands.toggleCheckbox();
+          }
+        }
+        
         return false;
       },
     };
@@ -340,9 +375,8 @@ export const CustomListItem = Node.create({
               const { tr } = this.editor.state;
               tr.setNodeMarkup($from.before(depth), null, { ...node.attrs, indentLevel: newIndent });
               this.editor.view.dispatch(tr);
-              return true;
             }
-            return false;
+            return true; // Always preventDefault to prevent tab navigation
           }
         }
         return false;
@@ -370,7 +404,6 @@ export const CustomListItem = Node.create({
         return false;
       },
       'Enter': () => {
-        // Create new list item with same type and indent level
         const { selection } = this.editor.state;
         const { $from } = selection;
         
@@ -378,13 +411,31 @@ export const CustomListItem = Node.create({
         for (let depth = $from.depth; depth >= 0; depth--) {
           const node = $from.node(depth);
           if (node.type.name === this.name) {
-            return this.editor.commands.splitBlock({
-              keepMarks: false,
-            }) && this.editor.commands.setCustomListItem({
-              listType: node.attrs.listType,
-              indentLevel: node.attrs.indentLevel,
-              checkboxState: 'todo', // Always start new items as todo
-            });
+            // Check if the list item is empty (no content or just whitespace)
+            const isEmpty = !node.textContent.trim();
+            
+            if (isEmpty) {
+              // On empty list item, unindent or convert to paragraph like Backspace
+              if (node.attrs.indentLevel > 0) {
+                // Unindent if has indent
+                const { tr } = this.editor.state;
+                tr.setNodeMarkup($from.before(depth), null, { ...node.attrs, indentLevel: node.attrs.indentLevel - 1 });
+                this.editor.view.dispatch(tr);
+                return true;
+              } else {
+                // Convert to paragraph if at top level
+                return this.editor.commands.setParagraph();
+              }
+            } else {
+              // Create new list item with same type and indent level
+              return this.editor.commands.splitBlock({
+                keepMarks: false,
+              }) && this.editor.commands.setCustomListItem({
+                listType: node.attrs.listType,
+                indentLevel: node.attrs.indentLevel,
+                checkboxState: 'todo', // Always start new items as todo
+              });
+            }
           }
         }
         return false;
@@ -412,6 +463,56 @@ export const CustomListItem = Node.create({
           }
         }
         return false;
+      },
+      'ArrowUp': () => {
+        // Fix navigation to properly jump to block above
+        const { selection } = this.editor.state;
+        const { $from } = selection;
+        
+        for (let depth = $from.depth; depth >= 0; depth--) {
+          const node = $from.node(depth);
+          if (node.type.name === this.name) {
+            // If at start of list item, navigate to end of previous block
+            if ($from.parentOffset === 0) {
+              const prevBlockPos = $from.before(depth) - 1;
+              if (prevBlockPos > 0) {
+                this.editor.commands.setTextSelection(prevBlockPos);
+                return true;
+              }
+            }
+            // Otherwise use default behavior
+            return false;
+          }
+        }
+        return false;
+      },
+      'ArrowDown': () => {
+        // Fix navigation to properly jump to block below
+        const { selection } = this.editor.state;
+        const { $from } = selection;
+        
+        for (let depth = $from.depth; depth >= 0; depth--) {
+          const node = $from.node(depth);
+          if (node.type.name === this.name) {
+            // If at end of list item, navigate to start of next block
+            if ($from.parentOffset === node.content.size) {
+              const nextBlockPos = $from.after(depth) + 1;
+              if (nextBlockPos < this.editor.state.doc.content.size) {
+                this.editor.commands.setTextSelection(nextBlockPos);
+                return true;
+              }
+            }
+            // Otherwise use default behavior
+            return false;
+          }
+        }
+        return false;
+      },
+      'Ctrl-n': () => {
+        // Ctrl-n should navigate up like ArrowUp
+        return this.editor.commands.selectParentNode() || 
+               this.editor.commands.focus('start') ||
+               false;
       },
     };
   },
