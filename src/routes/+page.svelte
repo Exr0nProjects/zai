@@ -798,28 +798,23 @@
       vpHeight = window.visualViewport.height;
       // Try VirtualKeyboard API first (Chrome Android)
       if ('virtualKeyboard' in navigator) {
-        console.log('overlaying content')
-        navigator.virtualKeyboard.overlaysContent = true;
         navigator.virtualKeyboard.addEventListener('geometrychange', (event) => {
           vpHeight = event.target.boundingRect.height;
         });
       }
       // Fallback to visualViewport API for other browsers
       else if ('visualViewport' in window) {
-        console.log('update visualviewport ig')
         const updateKeyboardHeight = (ev) => {
-          console.log('update visualviewport ig', ev)
           ev.preventDefault();
           ev.stopPropagation();
-          vpHeight = window.visualViewport.height;
-          // zoom out again to counteract the zoom in from the keyboard
-          if (ev.type == 'resize') {
-            window.visualViewport.scale = 1;
+          if (window.innerHeight == window.visualViewport.height) {
+            vpHeight = window.visualViewport.height - 16; // if at bottom, add padding for chrome bottom bar
+          } else {
+            vpHeight = window.visualViewport.height;
           }
         };
 
         const handleScrollTrigger = (ev) => {
-          console.log('handleScrollTrigger', ev)
           // Check if the event target is within the editor-container
           const editorContainer = ev.target.closest('.editor-container');
           
@@ -1419,7 +1414,7 @@
 <!-- Floating Bottom Controls -->
 <div 
   class="fixed left-0 right-0 z-50 pointer-events-none transition-all duration-300"
-  style={window.innerHeight > 768 ? "bottom: 0" : "top: calc(" + vpHeight + "px - 50px)"}
+  style={window.innerHeight > 768 ? "bottom: 0" : "top: " + (vpHeight - 50) + "px"}
 >
   <div class="max-w-4xl mx-auto px-4 py-3 pointer-events-auto">
     
@@ -1736,10 +1731,11 @@
       position: fixed;
       top: 0;
     }
+
     :global(main) {
+      height: 95vh;
       overflow-x: hidden;
       overflow-y: scroll;
-      border: 1px solid red;
     }
   }
 

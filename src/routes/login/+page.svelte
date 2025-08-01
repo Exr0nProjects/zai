@@ -167,12 +167,12 @@
           </div>
         {:else}
           <!-- OTP pill layout -->
-          <div class="flex items-center justify-center space-x-3">
+          <div class="flex items-center justify-center space-x-1.5 mr-4">
             <!-- Floating back button -->
             <button
               type="button"
               on:click={resetForm}
-              class="bg-white/90 backdrop-blur-md shadow-lg rounded-full border border-gray-200 p-3 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
+              class="bg-white/90 backdrop-blur-md shadow-lg rounded-full border border-gray-200 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
             >
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
