@@ -559,7 +559,7 @@ pill {
 
 /* Add left margin to main editor content to make space for time gutter */
 .editor-container .ProseMirror {
-  margin-left: 100px;
+  /* margin-left: 100px; */
   position: relative;
 }
 

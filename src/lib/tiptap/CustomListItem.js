@@ -64,27 +64,57 @@ function getMaxIndentLevel(state, nodeName) {
   const { from } = state.selection;
   const $pos = state.doc.resolve(from);
   
-  // Find current customListItem to get its parentId
+  // Find current node's blockId to exclude it
+  let currentBlockId = null;
   for (let depth = $pos.depth; depth >= 0; depth--) {
     const node = $pos.node(depth);
-    if (node.type.name === nodeName && node.attrs.parentId) {
-      // Find the parent node by its blockId
-      let parentNode = null;
-      state.doc.descendants((descendantNode) => {
-        if (descendantNode.attrs?.blockId === node.attrs.parentId) {
-          parentNode = descendantNode;
-          return false; // Stop traversal
-        }
-      });
-      
-      // Only allow indenting if parent is also a customListItem
-      if (parentNode && parentNode.type.name === nodeName) {
-        return (parentNode.attrs.indentLevel || 0) + 1;
-      }
+    if (node.type.name === nodeName) {
+      currentBlockId = node.attrs.blockId;
+      break;
     }
   }
   
-  return 0; // Can't indent if no parent or parent isn't a list item
+  // Find the most recent list item before current (at any indent level)
+  let mostRecentIndentLevel = -1;
+  
+  state.doc.nodesBetween(0, $pos.pos + 1, (node, pos) => {
+    if (node.type.name === nodeName) {
+      // If we found the current node, stop looking
+      if (node.attrs.blockId === currentBlockId) {
+        return false; // Break out of nodesBetween
+      }
+      
+      // Track the most recent list item's indent level
+      mostRecentIndentLevel = node.attrs.indentLevel || 0;
+    }
+  });
+  
+  // Allow indenting one level deeper than the most recent list item
+  return mostRecentIndentLevel + 1;
+}
+
+// Global helper function to find new parent ID
+function findNewParentId(state, currentPos, targetParentIndentLevel, nodeName, currentBlockId) {
+  let newParentId = null;
+  
+  // Look backwards from start of document until we find ourselves
+  state.doc.nodesBetween(0, currentPos + 1, (node, pos) => {
+    if (node.type.name === nodeName) {
+      // If we found the current node, stop looking
+      if (node.attrs.blockId === currentBlockId) {
+        return false; // Break out of nodesBetween
+      }
+      
+      const nodeIndentLevel = node.attrs.indentLevel || 0;
+      
+      // Find the most recent list item at the target parent indent level
+      if (nodeIndentLevel <= targetParentIndentLevel) {
+        newParentId = node.attrs.blockId;
+      }
+    }
+  });
+  
+  return newParentId;
 }
 
 // Custom list item node extending Paragraph
@@ -222,6 +252,67 @@ export const CustomListItem = Paragraph.extend({
         return commands.setNode(this.name, attributes);
       },
       
+      indentCustomListItem: () => ({ tr, state, dispatch }) => {
+        const { from } = state.selection;
+        const $pos = state.doc.resolve(from);
+        
+        // Find customListItem parent
+        for (let depth = $pos.depth; depth >= 0; depth--) {
+          const node = $pos.node(depth);
+          if (node.type.name === this.name) {
+            const currentIndent = node.attrs.indentLevel || 0;
+            const maxIndent = getMaxIndentLevel(state, this.name);
+            const newIndent = Math.min(maxIndent, currentIndent + 1);
+            
+            if (newIndent !== currentIndent) {
+              // Find the new parent (previous list item at the target indent level)
+              const newParentId = findNewParentId(state, $pos.pos, newIndent - 1, this.name, node.attrs.blockId);
+              
+              if (dispatch) {
+                tr.setNodeMarkup($pos.before(depth), null, { 
+                  ...node.attrs, 
+                  indentLevel: newIndent,
+                  parentId: newParentId
+                });
+              }
+              return true;
+            }
+            return true;  // prevent default
+          }
+        }
+        return true;
+      },
+      
+      outdentCustomListItem: () => ({ tr, state, dispatch }) => {
+        const { from } = state.selection;
+        const $pos = state.doc.resolve(from);
+        
+        // Find customListItem parent
+        for (let depth = $pos.depth; depth >= 0; depth--) {
+          const node = $pos.node(depth);
+          if (node.type.name === this.name) {
+            const currentIndent = node.attrs.indentLevel || 0;
+            const newIndent = Math.max(0, currentIndent - 1);
+            
+            if (newIndent !== currentIndent) {
+              // Find the new parent (previous list item at the target indent level)
+              const newParentId = newIndent === 0 ? null : findNewParentId(state, $pos.pos, newIndent - 1, this.name, node.attrs.blockId);
+              
+              if (dispatch) {
+                tr.setNodeMarkup($pos.before(depth), null, { 
+                  ...node.attrs, 
+                  indentLevel: newIndent,
+                  parentId: newParentId
+                });
+              }
+              return true;
+            }
+            return true;  // prevent default
+          }
+        }
+        return true;
+      },
+      
       toggleCustomListType: () => ({ tr, state, dispatch }) => {
         const { from } = state.selection;
         const $pos = state.doc.resolve(from);
@@ -249,28 +340,40 @@ export const CustomListItem = Paragraph.extend({
       toggleCheckbox: () => ({ tr, state, dispatch }) => {
         const { from } = state.selection;
         const $pos = state.doc.resolve(from);
+
+        console.log('togglecheckbox')
         
         // Find customListItem parent
         for (let depth = $pos.depth; depth >= 0; depth--) {
           const node = $pos.node(depth);
-          if (node.type.name === this.name && node.attrs.listType === 'checkbox') {
-            // Cycle through: todo -> done -> dropped -> todo
-            let newState;
-            switch (node.attrs.checkboxState) {
-              case 'todo':
-                newState = 'done';
-                break;
-              case 'done':
-                newState = 'dropped';
-                break;
-              case 'dropped':
-              default:
-                newState = 'todo';
-                break;
+          
+          if (node.type.name === this.name) {
+            let newAttrs;
+            
+            if (node.attrs.listType === 'checkbox') {
+              // Cycle through: todo -> done -> dropped -> bullet
+              switch (node.attrs.checkboxState) {
+                case 'todo':
+                  newAttrs = { ...node.attrs, checkboxState: 'done' };
+                  break;
+                case 'done':
+                  newAttrs = { ...node.attrs, checkboxState: 'dropped' };
+                  break;
+                case 'dropped':
+                default:
+                  // dropped -> bullet list
+                  newAttrs = { ...node.attrs, listType: 'bullet', checkboxState: null };
+                  break;
+              }
+            } else if (node.attrs.listType === 'bullet') {
+              // bullet -> todo
+              newAttrs = { ...node.attrs, listType: 'checkbox', checkboxState: 'todo' };
+            } else {
+              // fallback: convert to todo checkbox
+              newAttrs = { ...node.attrs, listType: 'checkbox', checkboxState: 'todo' };
             }
             
-            const newAttrs = { ...node.attrs, checkboxState: newState };
-            console.log('Checkbox state changed:', node.attrs.checkboxState, '->', newState);
+            console.log('Checkbox/list state changed:', node.attrs.listType, node.attrs.checkboxState, '->', newAttrs.listType, newAttrs.checkboxState);
             
             if (dispatch) {
               tr.setNodeMarkup($pos.before(depth), null, newAttrs);
@@ -312,16 +415,7 @@ export const CustomListItem = Paragraph.extend({
         for (let depth = $from.depth; depth >= 0; depth--) {
           const node = $from.node(depth);
           if (node.type.name === this.name) {
-            const currentIndent = getCurrentIndentLevel(this.editor.state, this.name);
-            const maxIndent = getMaxIndentLevel(this.editor.state, this.name);
-            const newIndent = Math.min(maxIndent, currentIndent + 1);
-            
-            if (newIndent !== currentIndent) {
-              const { tr } = this.editor.state;
-              tr.setNodeMarkup($from.before(depth), null, { ...node.attrs, indentLevel: newIndent });
-              this.editor.view.dispatch(tr);
-            }
-            return true; // Always preventDefault to prevent tab navigation
+            return this.editor.commands.indentCustomListItem();
           }
         }
         return false;
@@ -334,16 +428,7 @@ export const CustomListItem = Paragraph.extend({
         for (let depth = $from.depth; depth >= 0; depth--) {
           const node = $from.node(depth);
           if (node.type.name === this.name) {
-            const currentIndent = getCurrentIndentLevel(this.editor.state, this.name);
-            const newIndent = Math.max(0, currentIndent - 1);
-            
-            if (newIndent !== currentIndent) {
-              const { tr } = this.editor.state;
-              tr.setNodeMarkup($from.before(depth), null, { ...node.attrs, indentLevel: newIndent });
-              this.editor.view.dispatch(tr);
-              return true;
-            }
-            return false;
+            return this.editor.commands.outdentCustomListItem();
           }
         }
         return false;
@@ -416,31 +501,56 @@ export const CustomListItem = Paragraph.extend({
         
         for (let depth = $from.depth; depth >= 0; depth--) {
           const node = $from.node(depth);
-          if (node.type.name === this.name && node.attrs.listType === 'checkbox') {
+          if (node.type.name === this.name && (node.attrs.listType === 'checkbox' || node.attrs.listType === 'bullet')) {
             return this.editor.commands.toggleCheckbox();
           }
         }
         return false;
       },
-      };
-    },
+      'Control-Enter': () => {
+        // Toggle checkbox on Cmd/Ctrl+Enter
+        const { selection } = this.editor.state;
+        const { $from } = selection;
+        
+        for (let depth = $from.depth; depth >= 0; depth--) {
+          const node = $from.node(depth);
+          if (node.type.name === this.name && (node.attrs.listType === 'checkbox' || node.attrs.listType === 'bullet')) {
+            return this.editor.commands.toggleCheckbox();
+          }
+        }
+        return false;
+      },
+    };
+  },
   
   addDOMEventListeners() {
     return {
       click: (view, event) => {
         const target = event.target;
-        console.log('clicke event', target)
+        console.log('click event on:', target.className);
         
-        // Check if click is on a custom checkbox item
-        if (target.classList.contains('custom-checkbox')) {
-          // Check if click is in the left margin area (where pseudo-element checkbox is)
+        // Check if click is on a custom checkbox item or any checkbox/bullet item
+        if (target.classList.contains('custom-checkbox') || target.classList.contains('custom-bullet')) {
+          // Check if click is in the left margin area (where pseudo-element is)
           const rect = target.getBoundingClientRect();
           const clickX = event.clientX - rect.left;
           
-          // If click is in the checkbox area (0.5rem to 1.5rem from left edge)
-          if (clickX >= 8 && clickX <= 32) { // 0.5rem to 2rem ≈ 8px to 32px
+          console.log('List item click detected at x:', clickX, 'on element with classes:', target.className);
+          
+          // If click is in the pseudo-element area (roughly 0 to 1.25rem from left edge)
+          if (clickX >= 0 && clickX <= 24) { // 0 to 1.5rem ≈ 0px to 24px
             event.preventDefault();
-            return this.editor.commands.toggleCheckbox();
+            event.stopPropagation();
+            console.log('Calling toggleCheckbox command for list item click');
+            
+            // Get the toggle command and execute it directly
+            const toggleCommand = this.editor.commands.toggleCheckbox;
+            if (toggleCommand) {
+              const result = toggleCommand();
+              console.log('toggleCheckbox result:', result);
+              return result;
+            }
+            return true;
           }
         }
         return false;

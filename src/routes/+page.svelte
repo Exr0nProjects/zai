@@ -480,7 +480,7 @@
         }),
         SearchHighlightPlugin,
         PatternAnnotationPlugin, // Hover annotations for patterns
-        TimeGutterPlugin, // Time gutter on the left
+        // TimeGutterPlugin, // Time gutter on the left
         // TimelineSortingPlugin.configure({
         //   enabled: true,
         //   debugMode: true, // Set to true for debugging timeline sorting
@@ -1148,12 +1148,20 @@
               checkboxState: 'dropped'
             });
           } else {
-            // dropped → paragraph
-            editor.commands.setParagraph();
+            // dropped → bullet list (at same indent level)
+            editor.commands.setCustomListItem({
+              listType: 'bullet',
+              indentLevel: currentNode.attrs.indentLevel,
+              checkboxState: null
+            });
           }
         } else {
-          // bullet → paragraph (shouldn't happen with current flow, but safety)
-          editor.commands.setParagraph();
+          // bullet → todo
+          editor.commands.setCustomListItem({
+            listType: 'checkbox',
+            indentLevel: currentNode.attrs.indentLevel,
+            checkboxState: 'todo'
+          });
         }
       } else {
         // paragraph → todo
@@ -1195,14 +1203,20 @@
   function indentList() {
     if (editor) {
       editor.commands.focus();
-      editor.commands.sinkListItem('listItem') || editor.commands.sinkListItem('taskItem');
+      // Try custom list item first, fallback to old list types for compatibility
+      editor.commands.indentCustomListItem() || 
+      editor.commands.sinkListItem('listItem') || 
+      editor.commands.sinkListItem('taskItem');
     }
   }
   
   function outdentList() {
     if (editor) {
       editor.commands.focus();
-      editor.commands.liftListItem('listItem') || editor.commands.liftListItem('taskItem');
+      // Try custom list item first, fallback to old list types for compatibility
+      editor.commands.outdentCustomListItem() || 
+      editor.commands.liftListItem('listItem') || 
+      editor.commands.liftListItem('taskItem');
     }
   }
   
