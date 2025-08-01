@@ -239,33 +239,14 @@ export const CustomListItem = Node.create({
   addDOMEventListeners() {
     return {
       click: (view, event) => {
-        console.log('CustomListItem click event:', {
-          target: event.target,
-          classList: Array.from(event.target.classList),
-          tagName: event.target.tagName,
-          parentElement: event.target.parentElement,
-          customListCheckbox: event.target.classList.contains('custom-list-checkbox'),
-          isCheckbox: event.target.type === 'checkbox'
-        });
+        console.log('Click detected:', event.target.tagName, event.target.type, Array.from(event.target.classList));
         
-        // Check for direct checkbox click
-        if (event.target.classList.contains('custom-list-checkbox') || event.target.type === 'checkbox') {
-          console.log('Direct checkbox click detected');
+        // Simple checkbox click detection
+        if (event.target.type === 'checkbox' && event.target.classList.contains('custom-list-checkbox')) {
+          console.log('Checkbox click - toggling');
           event.preventDefault();
           return this.editor.commands.toggleCheckbox();
         }
-        
-        // Check for clicks on the list item that should toggle checkbox
-        const listItem = event.target.closest('.custom-list-item.task-item');
-        if (listItem) {
-          const checkbox = listItem.querySelector('.custom-list-checkbox');
-          if (checkbox) {
-            console.log('List item click detected, toggling checkbox');
-            event.preventDefault();
-            return this.editor.commands.toggleCheckbox();
-          }
-        }
-        
         return false;
       },
     };
@@ -464,56 +445,7 @@ export const CustomListItem = Node.create({
         }
         return false;
       },
-      'ArrowUp': () => {
-        // Fix navigation to properly jump to block above
-        const { selection } = this.editor.state;
-        const { $from } = selection;
-        
-        for (let depth = $from.depth; depth >= 0; depth--) {
-          const node = $from.node(depth);
-          if (node.type.name === this.name) {
-            // If at start of list item, navigate to end of previous block
-            if ($from.parentOffset === 0) {
-              const prevBlockPos = $from.before(depth) - 1;
-              if (prevBlockPos > 0) {
-                this.editor.commands.setTextSelection(prevBlockPos);
-                return true;
-              }
-            }
-            // Otherwise use default behavior
-            return false;
-          }
-        }
-        return false;
-      },
-      'ArrowDown': () => {
-        // Fix navigation to properly jump to block below
-        const { selection } = this.editor.state;
-        const { $from } = selection;
-        
-        for (let depth = $from.depth; depth >= 0; depth--) {
-          const node = $from.node(depth);
-          if (node.type.name === this.name) {
-            // If at end of list item, navigate to start of next block
-            if ($from.parentOffset === node.content.size) {
-              const nextBlockPos = $from.after(depth) + 1;
-              if (nextBlockPos < this.editor.state.doc.content.size) {
-                this.editor.commands.setTextSelection(nextBlockPos);
-                return true;
-              }
-            }
-            // Otherwise use default behavior
-            return false;
-          }
-        }
-        return false;
-      },
-      'Ctrl-n': () => {
-        // Ctrl-n should navigate up like ArrowUp
-        return this.editor.commands.selectParentNode() || 
-               this.editor.commands.focus('start') ||
-               false;
-      },
+
     };
   },
   
