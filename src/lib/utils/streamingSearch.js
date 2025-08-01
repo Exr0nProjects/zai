@@ -345,9 +345,11 @@ export class StreamingSearch {
           const subtreeMatches = nodeMatches || this.hasMatchingDescendants(node, queryWords);
 
           if (subtreeMatches) {
-            // This node should be shown, and so should all its ancestors
+            // This node should be shown, and so should all its ancestors and children
             this.markAncestorsForVisibility(node, pos, shouldShowBlocks);
             shouldShowBlocks.add(node.attrs.blockId);
+            // Also mark all children (and their descendants) for visibility
+            this.markChildrenForVisibility(node.attrs.blockId, shouldShowBlocks, allNodes);
             matchedCount++;
           }
 
@@ -481,6 +483,32 @@ export class StreamingSearch {
     });
     
     return hasMatch;
+  }
+
+  // Mark all children of a matching node for visibility (recursive)
+  markChildrenForVisibility(blockId, shouldShowBlocks, allNodes, visited = new Set()) {
+    // Prevent infinite recursion
+    if (visited.has(blockId)) {
+      return;
+    }
+    visited.add(blockId);
+    
+    // Find the node with this blockId
+    const nodeInfo = allNodes.find(n => n.node.attrs?.blockId === blockId);
+    if (!nodeInfo || !nodeInfo.node.attrs?.children) {
+      return;
+    }
+    
+    const children = nodeInfo.node.attrs.children;
+    if (Array.isArray(children)) {
+      for (const childId of children) {
+        shouldShowBlocks.add(childId);
+        if (LOG) console.log('👶 Marking child for visibility:', childId);
+        
+        // Recursively mark grandchildren
+        this.markChildrenForVisibility(childId, shouldShowBlocks, allNodes, visited);
+      }
+    }
   }
 
   // Mark all ancestors of a matching node for visibility

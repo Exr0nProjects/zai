@@ -155,11 +155,16 @@ const parseMarkdown = (text, schema) => {
   const nodes = [];
   let i = 0;
   
+  // Track indentation levels for dynamic bullet list parsing
+  const indentLevelMap = new Map(); // space count -> logical level
+  let currentLogicalLevel = 0;
+  
   while (i < lines.length) {
     const line = lines[i];
     
-    // Skip empty lines
+    // Create empty paragraphs for empty lines
     if (!line.trim()) {
+      nodes.push(schema.nodes.paragraph.create({}, []));
       i++;
       continue;
     }
@@ -180,9 +185,35 @@ const parseMarkdown = (text, schema) => {
     // Parse task lists (checkbox lists) - convert to customListItem
     const taskMatch = line.match(/^(\s*)([-*+])\s*\[([x\- ])\]\s*(.*)$/);
     if (taskMatch) {
-      const indentLevel = Math.floor(taskMatch[1].length / 2); // 2 spaces = 1 indent
+      const spaceCount = taskMatch[1].length;
       const checkboxChar = taskMatch[3];
       const text = taskMatch[4];
+      
+      // Dynamic indentation level calculation (same logic as bullet lists)
+      let indentLevel = 0;
+      if (spaceCount === 0) {
+        indentLevel = 0;
+        indentLevelMap.set(0, 0);
+      } else if (indentLevelMap.has(spaceCount)) {
+        // Known indentation level
+        indentLevel = indentLevelMap.get(spaceCount);
+      } else {
+        // New indentation level - find the appropriate logical level
+        const existingLevels = Array.from(indentLevelMap.keys()).sort((a, b) => a - b);
+        let foundLevel = 0;
+        
+        for (let i = existingLevels.length - 1; i >= 0; i--) {
+          const existingSpaceCount = existingLevels[i];
+          if (spaceCount >= existingSpaceCount + 2) {
+            foundLevel = indentLevelMap.get(existingSpaceCount) + 1;
+            break;
+          }
+        }
+        
+        indentLevel = foundLevel;
+        indentLevelMap.set(spaceCount, indentLevel);
+        currentLogicalLevel = Math.max(currentLogicalLevel, indentLevel);
+      }
       
       let checkboxState = 'todo';
       if (checkboxChar === 'x' || checkboxChar === 'X') checkboxState = 'done';
@@ -202,8 +233,34 @@ const parseMarkdown = (text, schema) => {
     // Parse bullet lists - convert to customListItem
     const bulletMatch = line.match(/^(\s*)([-*+])\s*(.*)$/);
     if (bulletMatch && !taskMatch) { // Make sure it's not a task list
-      const indentLevel = Math.floor(bulletMatch[1].length / 2); // 2 spaces = 1 indent
+      const spaceCount = bulletMatch[1].length;
       const text = bulletMatch[3];
+      
+      // Dynamic indentation level calculation
+      let indentLevel = 0;
+      if (spaceCount === 0) {
+        indentLevel = 0;
+        indentLevelMap.set(0, 0);
+      } else if (indentLevelMap.has(spaceCount)) {
+        // Known indentation level
+        indentLevel = indentLevelMap.get(spaceCount);
+      } else {
+        // New indentation level - find the appropriate logical level
+        const existingLevels = Array.from(indentLevelMap.keys()).sort((a, b) => a - b);
+        let foundLevel = 0;
+        
+        for (let i = existingLevels.length - 1; i >= 0; i--) {
+          const existingSpaceCount = existingLevels[i];
+          if (spaceCount >= existingSpaceCount + 2) {
+            foundLevel = indentLevelMap.get(existingSpaceCount) + 1;
+            break;
+          }
+        }
+        
+        indentLevel = foundLevel;
+        indentLevelMap.set(spaceCount, indentLevel);
+        currentLogicalLevel = Math.max(currentLogicalLevel, indentLevel);
+      }
       
       const inlineContent = parseInlineMarkdown(text, schema);
       nodes.push(schema.nodes.customListItem.create({
@@ -261,10 +318,22 @@ export const MarkdownPaste = Extension.create({
                 const { tr } = view.state;
                 let { from } = view.state.selection;
                 
+                // Generate a single temporary blockId for all pasted nodes
+                // This will trigger TimestampPlugin's duplicate ID logic which will
+                // assign proper parent IDs based on document structure
+                const tempBlockId = `paste-temp-${Date.now()}`;
+                
                 // Insert the parsed nodes sequentially, updating position after each insert
                 nodes.forEach((node) => {
-                  tr.insert(from, node);
-                  from += node.nodeSize; // Update position for next insertion
+                  // Add temporary blockId to trigger duplicate ID handling
+                  const nodeWithTempId = node.type.create({
+                    ...node.attrs,
+                    blockId: tempBlockId,
+                    createdAt: new Date().toISOString(),
+                  }, node.content, node.marks);
+                  
+                  tr.insert(from, nodeWithTempId);
+                  from += nodeWithTempId.nodeSize; // Update position for next insertion
                 });
                 
                 view.dispatch(tr);
