@@ -1330,7 +1330,7 @@
 
 {#if dev}
   <div class="fixed top-4 right-4 z-50 bg-accent-light text-white px-2 py-1 rounded text-xs font-mono pointer-events-none">
-    list-fully-functional
+    indent-styling-complete
   </div>
 {/if}
 
@@ -2137,23 +2137,32 @@
     background-color: #ccc;
     border-color: #ccc;
     cursor: not-allowed;
+    opacity: 0.6;
+    position: relative;
+  }
+
+  :global(.custom-list-item.task-item.dropped .task-checkbox::before) {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cline x1='3' y1='17' x2='17' y2='3' stroke='%23666' stroke-width='2'/%3E%3C/svg%3E") center/12px no-repeat;
   }
 
   :global(.custom-list-item.task-item.dropped .task-checkbox::after) {
-    content: '×';
-    font-family: 'Courier New', monospace;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: white;
-    font-size: 14px;
-    font-weight: bold;
+    display: none;
   }
 
   :global(.custom-list-item .list-content) {
     flex: 1;
     min-height: 1.5rem;
+  }
+
+  :global(.custom-list-item.task-item.dropped .list-content) {
+    opacity: 0.6;
+    text-decoration: line-through;
   }
 
   /* Debug styles for custom list items */

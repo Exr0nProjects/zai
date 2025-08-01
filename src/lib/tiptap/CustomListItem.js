@@ -192,7 +192,7 @@ export const CustomListItem = Node.create({
           class: 'custom-list-item',
           style: `margin-left: ${paddingLeft}rem;`,
         }),
-        ['span', { class: 'list-bullet' }, '•'],
+        ['span', { class: 'list-bullet' }, '-'],
         ['span', { class: 'list-content' }, 0],
       ];
     } else {
@@ -258,7 +258,7 @@ export const CustomListItem = Node.create({
             };
             
             if (dispatch) {
-              tr.setNodeMarkup($pos.start(depth), null, newAttrs);
+              tr.setNodeMarkup($pos.before(depth), null, newAttrs);
             }
             return true;
           }
@@ -290,9 +290,10 @@ export const CustomListItem = Node.create({
             }
             
             const newAttrs = { ...node.attrs, checkboxState: newState };
+            console.log('Checkbox state changed:', node.attrs.checkboxState, '->', newState);
             
             if (dispatch) {
-              tr.setNodeMarkup($pos.start(depth), null, newAttrs);
+              tr.setNodeMarkup($pos.before(depth), null, newAttrs);
             }
             return true;
           }
@@ -311,32 +312,63 @@ export const CustomListItem = Node.create({
             const newAttrs = { ...node.attrs, checkboxState: state };
             
             if (dispatch) {
-              tr.setNodeMarkup($pos.start(depth), null, newAttrs);
+              tr.setNodeMarkup($pos.before(depth), null, newAttrs);
             }
             return true;
           }
         }
         return false;
       },
-      
-      indentListItem: () => ({ tr, state, dispatch }) => {
-        return this.editor.commands.updateAttributes(this.name, {
-          indentLevel: Math.min(getMaxIndentLevel(state, this.name), getCurrentIndentLevel(state, this.name) + 1)
-        });
-      },
-      
-      outdentListItem: () => ({ tr, state, dispatch }) => {
-        return this.editor.commands.updateAttributes(this.name, {
-          indentLevel: Math.max(0, getCurrentIndentLevel(state, this.name) - 1)
-        });
-      },
     };
   },
   
   addKeyboardShortcuts() {
     return {
-      'Tab': () => this.editor.commands.indentListItem(),
-      'Shift-Tab': () => this.editor.commands.outdentListItem(),
+      'Tab': () => {
+        // Only apply if we're in a customListItem
+        const { selection } = this.editor.state;
+        const { $from } = selection;
+        
+        for (let depth = $from.depth; depth >= 0; depth--) {
+          const node = $from.node(depth);
+          if (node.type.name === this.name) {
+            const currentIndent = getCurrentIndentLevel(this.editor.state, this.name);
+            const maxIndent = getMaxIndentLevel(this.editor.state, this.name);
+            const newIndent = Math.min(maxIndent, currentIndent + 1);
+            
+            if (newIndent !== currentIndent) {
+              const { tr } = this.editor.state;
+              tr.setNodeMarkup($from.before(depth), null, { ...node.attrs, indentLevel: newIndent });
+              this.editor.view.dispatch(tr);
+              return true;
+            }
+            return false;
+          }
+        }
+        return false;
+      },
+      'Shift-Tab': () => {
+        // Only apply if we're in a customListItem
+        const { selection } = this.editor.state;
+        const { $from } = selection;
+        
+        for (let depth = $from.depth; depth >= 0; depth--) {
+          const node = $from.node(depth);
+          if (node.type.name === this.name) {
+            const currentIndent = getCurrentIndentLevel(this.editor.state, this.name);
+            const newIndent = Math.max(0, currentIndent - 1);
+            
+            if (newIndent !== currentIndent) {
+              const { tr } = this.editor.state;
+              tr.setNodeMarkup($from.before(depth), null, { ...node.attrs, indentLevel: newIndent });
+              this.editor.view.dispatch(tr);
+              return true;
+            }
+            return false;
+          }
+        }
+        return false;
+      },
       'Enter': () => {
         // Create new list item with same type and indent level
         const { selection } = this.editor.state;
@@ -361,11 +393,22 @@ export const CustomListItem = Node.create({
         const { selection } = this.editor.state;
         const { $from } = selection;
         
-        // If at start of list item and has indent, outdent instead of deleting
+        // Only apply if at start of list item
         if ($from.parentOffset === 0) {
-          const node = $from.parent;
-          if (node.type.name === this.name && node.attrs.indentLevel > 0) {
-            return this.editor.commands.outdentListItem();
+          for (let depth = $from.depth; depth >= 0; depth--) {
+            const node = $from.node(depth);
+            if (node.type.name === this.name) {
+              if (node.attrs.indentLevel > 0) {
+                // Outdent if has indent
+                const { tr } = this.editor.state;
+                tr.setNodeMarkup($from.before(depth), null, { ...node.attrs, indentLevel: node.attrs.indentLevel - 1 });
+                this.editor.view.dispatch(tr);
+                return true;
+              } else {
+                // Convert to paragraph if at top level
+                return this.editor.commands.setParagraph();
+              }
+            }
           }
         }
         return false;
@@ -375,9 +418,9 @@ export const CustomListItem = Node.create({
   
   addInputRules() {
     return [
-      // Detect bullet list pattern: spaces + dash + optional space
+      // Detect bullet list pattern: spaces + dash + space
       textblockTypeInputRule({
-        find: /^(\s*)-\s*$/,
+        find: /^(\s*)- $/,
         type: this.type,
         getAttributes: (match) => {
           const indentLevel = Math.floor(match[1].length / 2);
