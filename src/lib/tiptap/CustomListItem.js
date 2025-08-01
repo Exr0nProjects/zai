@@ -1,6 +1,5 @@
-import { Node } from '@tiptap/core';
-import { mergeAttributes } from '@tiptap/core';
-import { textblockTypeInputRule } from '@tiptap/core';
+import { mergeAttributes, textblockTypeInputRule } from '@tiptap/core';
+import Paragraph from '@tiptap/extension-paragraph';
 
 // Markdown serialization support
 export function serializeCustomListItem(node) {
@@ -88,18 +87,13 @@ function getMaxIndentLevel(state, nodeName) {
   return 0; // Can't indent if no parent or parent isn't a list item
 }
 
-// Custom list item node
-export const CustomListItem = Node.create({
+// Custom list item node extending Paragraph
+export const CustomListItem = Paragraph.extend({
   name: 'customListItem',
-  
-  group: 'block',
-  
-  content: 'inline*',
-  
-  defining: true,
   
   addAttributes() {
     return {
+      ...this.parent?.(),
       // Standard block attributes (same interface as ExtendedNodes)
       blockId: {
         default: null,
@@ -186,7 +180,7 @@ export const CustomListItem = Node.create({
   parseHTML() {
     return [
       {
-        tag: 'li',
+        tag: 'p',
         class: 'custom-list-item',
       },
     ];
@@ -194,63 +188,33 @@ export const CustomListItem = Node.create({
   
   renderHTML({ HTMLAttributes, node }) {
     const { indentLevel, listType, checkboxState } = node.attrs;
-    const paddingLeft = indentLevel * 1.5; // 1.5rem per indent level
+    const paddingLeft = indentLevel * 1.25;
+    
+    // Build CSS classes for styling via ::before
+    const classes = ['custom-list-item'];
     
     if (listType === 'bullet') {
-      // Render as bullet list item using existing CSS
-      return [
-        'li',
-        mergeAttributes(HTMLAttributes, {
-          class: 'custom-list-item',
-          style: `margin-left: ${paddingLeft}rem;`,
-        }),
-        ['span', { class: 'list-bullet' }, '-'],
-        ['span', { class: 'list-content' }, 0],
-      ];
+      classes.push('custom-bullet');
     } else {
-      // Render as task list item using existing CSS structure
-      const isChecked = checkboxState === 'done';
-      const isDropped = checkboxState === 'dropped';
-      
-      const checkboxClass = isDropped ? 'dropped' : (isChecked ? 'done' : 'todo');
-      
-      return [
-        'li',
-        mergeAttributes(HTMLAttributes, {
-          class: `custom-list-item task-item ${checkboxClass}`,
-          style: `margin-left: ${paddingLeft}rem;`,
-        }),
-        [
-          'input',
-          {
-            type: 'checkbox',
-            checked: isChecked,
-            disabled: isDropped,
-            class: 'task-checkbox custom-list-checkbox',
-            'data-checkbox-state': checkboxState,
-            'data-block-id': node.attrs.blockId,
-          }
-        ],
-        ['span', { class: 'list-content', style: isDropped ? 'text-decoration: line-through; opacity: 0.6;' : '' }, 0],
-      ];
+      classes.push('custom-checkbox');
+      if (checkboxState === 'done') classes.push('checked');
+      if (checkboxState === 'dropped') classes.push('dropped');
     }
+    
+    return [
+      'p',
+      mergeAttributes(HTMLAttributes, {
+        class: classes.join(' '),
+        style: `margin-left: ${paddingLeft}rem;`,
+        'data-list-type': listType,
+        'data-checkbox-state': checkboxState,
+        'data-indent-level': indentLevel,
+      }),
+      0,
+    ];
   },
   
-  addDOMEventListeners() {
-    return {
-      click: (view, event) => {
-        console.log('Click detected:', event.target.tagName, event.target.type, Array.from(event.target.classList));
-        
-        // Simple checkbox click detection
-        if (event.target.type === 'checkbox' && event.target.classList.contains('custom-list-checkbox')) {
-          console.log('Checkbox click - toggling');
-          event.preventDefault();
-          return this.editor.commands.toggleCheckbox();
-        }
-        return false;
-      },
-    };
-  },
+
   
   addCommands() {
     return {
@@ -443,9 +407,44 @@ export const CustomListItem = Node.create({
             }
           }
         }
+                return false;
+      },
+      'Mod-Enter': () => {
+        // Toggle checkbox on Cmd/Ctrl+Enter
+        const { selection } = this.editor.state;
+        const { $from } = selection;
+        
+        for (let depth = $from.depth; depth >= 0; depth--) {
+          const node = $from.node(depth);
+          if (node.type.name === this.name && node.attrs.listType === 'checkbox') {
+            return this.editor.commands.toggleCheckbox();
+          }
+        }
         return false;
       },
-
+      };
+    },
+  
+  addDOMEventListeners() {
+    return {
+      click: (view, event) => {
+        const target = event.target;
+        console.log('clicke event', target)
+        
+        // Check if click is on a custom checkbox item
+        if (target.classList.contains('custom-checkbox')) {
+          // Check if click is in the left margin area (where pseudo-element checkbox is)
+          const rect = target.getBoundingClientRect();
+          const clickX = event.clientX - rect.left;
+          
+          // If click is in the checkbox area (0.5rem to 1.5rem from left edge)
+          if (clickX >= 8 && clickX <= 32) { // 0.5rem to 2rem ≈ 8px to 32px
+            event.preventDefault();
+            return this.editor.commands.toggleCheckbox();
+          }
+        }
+        return false;
+      },
     };
   },
   
@@ -488,50 +487,4 @@ export const CustomListItem = Node.create({
   },
 });
 
-// CSS for custom list items
-export const customListItemCSS = `
-.custom-list-item {
-  display: block;
-  margin: 0.25rem 0;
-  min-height: 1.5rem;
-  position: relative;
-}
-
-.list-bullet {
-  color: #666;
-  font-weight: bold;
-  width: 1rem;
-  text-align: center;
-}
-
-.list-checkbox {
-  width: 1rem;
-  height: 1rem;
-  cursor: pointer;
-}
-
-.list-content {
-  margin-left: 1.5rem;
-}
-
-.custom-list-item.checked .list-content {
-  text-decoration: line-through;
-  opacity: 0.6;
-}
-
-/* Debug styles */
-.debug-new-block.custom-list-item {
-  border: 2px solid blue !important;
-}
-
-.debug-new-block-parent.custom-list-item {
-  border: 2px dashed blue !important;
-}
-
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-  .list-bullet {
-    color: #aaa;
-  }
-}
-`; 
+ 

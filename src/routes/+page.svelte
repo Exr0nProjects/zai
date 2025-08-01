@@ -1117,41 +1117,46 @@
     if (editor) {
       editor.commands.focus();
       
-      // Check if we're already in a custom list item
       const { from } = editor.state.selection;
       const $pos = editor.state.doc.resolve(from);
       
       // Find if we're inside a customListItem
-      let inCustomList = false;
+      let currentNode = null;
       for (let depth = $pos.depth; depth >= 0; depth--) {
         const node = $pos.node(depth);
         if (node.type.name === 'customListItem') {
-          inCustomList = true;
+          currentNode = node;
           break;
         }
       }
       
-      if (inCustomList) {
-        // Toggle listType: if already checkbox, convert to bullet; if bullet, convert to checkbox
-        let currentNode = null;
-        for (let depth = $pos.depth; depth >= 0; depth--) {
-          const node = $pos.node(depth);
-          if (node.type.name === 'customListItem') {
-            currentNode = node;
-            break;
+      if (currentNode) {
+        // Cycle through checkbox states: todo → done → dropped → paragraph
+        if (currentNode.attrs.listType === 'checkbox') {
+          if (currentNode.attrs.checkboxState === 'todo') {
+            // todo → done
+            editor.commands.setCustomListItem({
+              listType: 'checkbox',
+              indentLevel: currentNode.attrs.indentLevel,
+              checkboxState: 'done'
+            });
+          } else if (currentNode.attrs.checkboxState === 'done') {
+            // done → dropped
+            editor.commands.setCustomListItem({
+              listType: 'checkbox',
+              indentLevel: currentNode.attrs.indentLevel,
+              checkboxState: 'dropped'
+            });
+          } else {
+            // dropped → paragraph
+            editor.commands.setParagraph();
           }
-        }
-        
-        if (currentNode) {
-          const newListType = currentNode.attrs.listType === 'checkbox' ? 'bullet' : 'checkbox';
-          editor.commands.setCustomListItem({
-            listType: newListType,
-            indentLevel: currentNode.attrs.indentLevel,
-            checkboxState: 'todo' // Reset to todo when switching to checkbox
-          });
+        } else {
+          // bullet → paragraph (shouldn't happen with current flow, but safety)
+          editor.commands.setParagraph();
         }
       } else {
-        // Toggle on: create custom list item preserving current context
+        // paragraph → todo
         // Try to get current indent level from any nearby custom list items
         let currentIndent = 0;
         
@@ -1694,7 +1699,7 @@
 <style>
   :global(:root) {
     --debug-borders: none; /* Change to "1px solid red" to show debug borders */
-    --block-borders: 0.5px solid black; /* Change to "1px solid #000" to show block borders */
+    --block-borders: none; /* Change to "1px solid #000" to show block borders */
     --block-hover-bg: none; /* Change to "rgba(0, 0, 0, 0.02)" to show hover background */
   }
 
@@ -1858,6 +1863,85 @@
   :global(.block-with-info.parent-highlighted) {
     border: 4px dashed #f97316; /* Orange 1px border for parent */
     border-radius: 0.375rem;
+  }
+
+  /* Custom List Item Styles - Override block-with-info padding/margins */
+  :global(.custom-list-item.block-with-info) {
+    position: relative;
+    padding: 0.25rem 0.5rem 0.25rem 1.25rem; /* Keep top/right/bottom padding, increase left for pseudo-element */
+    min-height: 1.5rem;
+  }
+
+  /* Bullet list styling */
+  :global(.custom-list-item.custom-bullet::before) {
+    content: '-';
+    position: absolute;
+    left: 0; /* Account for block-with-info padding */
+    width: 1rem;
+    text-align: center;
+    color: #666;
+    font-weight: bold;
+  }
+
+  /* Checkbox styling */
+  :global(.custom-list-item.custom-checkbox::before) {
+    content: '◯';
+    position: absolute;
+    left: 0;
+    width: 1rem;
+    text-align: center;
+    font-size: 1.25rem;
+    font-family: 'Courier New', monospace;
+    top: 0.1rem;
+    color: #666;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  :global(.custom-list-item.custom-checkbox.checked::before) {
+    content: '✓';
+  }
+
+  :global(.custom-list-item.custom-checkbox.dropped::before) {
+    content: '◯';
+    text-decoration: line-through;
+    opacity: 0.5;
+  }
+
+  /* Checkbox content styling */
+  :global(.custom-list-item.custom-checkbox.checked) {
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
+
+  :global(.custom-list-item.custom-checkbox.dropped) {
+    text-decoration: line-through;
+    opacity: 0.5;
+  }
+
+  /* Debug styles for custom list items */
+  :global(.debug-new-block.custom-list-item) {
+    border: 2px solid blue !important;
+  }
+
+  :global(.debug-new-block-parent.custom-list-item) {
+    border: 2px dashed blue !important;
+  }
+
+  /* Dark mode support for custom lists */
+  @media (prefers-color-scheme: dark) {
+    :global(.custom-list-item.custom-bullet::before),
+    :global(.custom-list-item.custom-checkbox::before) {
+      color: #aaa;
+    }
+    
+    :global(.custom-list-item.custom-checkbox.checked::before) {
+      color: var(--accent-dark, #2563eb);
+    }
+    
+    :global(.custom-list-item.custom-checkbox.dropped::before) {
+      color: #ef4444;
+    }
   }
 
   /* Block info tooltip styling */
@@ -2112,105 +2196,7 @@
     padding-top: 2.7rem;
   }
   
-  /* Custom List Item Styles */
-  :global(.custom-list-item) {
-    display: flex;
-    align-items: flex-start;
-    margin: 0.25rem 0;
-    list-style: none;
-  }
 
-  :global(.custom-list-item .list-bullet) {
-    color: #666;
-    font-weight: bold;
-    margin-right: 0.5rem;
-    user-select: none;
-  }
-
-  :global(.custom-list-item.task-item .task-checkbox) {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 1rem;
-    height: 1rem;
-    border-radius: 50%;
-    border: 1px solid var(--border);
-    cursor: pointer;
-    background-color: var(--bg);
-    position: relative;
-    transition: all 0.2s ease;
-    margin-top: 0.25rem;
-    margin-right: 0.5rem;
-  }
-
-  :global(.custom-list-item.task-item.done .task-checkbox) {
-    background-color: var(--accent);
-    border-color: var(--accent);
-  }
-
-  :global(.custom-list-item.task-item.done .task-checkbox::after) {
-    content: '✓';
-    font-family: 'Courier New', monospace;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -43%);
-    color: white;
-    font-size: 12px;
-    font-weight: bold;
-  }
-
-  :global(.custom-list-item.task-item.dropped .task-checkbox) {
-    background-color: #ccc;
-    border-color: #ccc;
-    cursor: not-allowed;
-    opacity: 0.6;
-    position: relative;
-  }
-
-  :global(.custom-list-item.task-item.dropped .task-checkbox::before) {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cline x1='3' y1='17' x2='17' y2='3' stroke='%23666' stroke-width='2'/%3E%3C/svg%3E") center/12px no-repeat;
-  }
-
-  :global(.custom-list-item.task-item.dropped .task-checkbox::after) {
-    display: none;
-  }
-
-  :global(.custom-list-item .list-content) {
-    flex: 1;
-    min-height: 1.5rem;
-  }
-
-  :global(.custom-list-item.task-item.dropped .list-content) {
-    opacity: 0.6;
-    text-decoration: line-through;
-  }
-
-  /* Debug styles for custom list items */
-  :global(.debug-new-block.custom-list-item) {
-    border: 2px solid blue !important;
-  }
-
-  :global(.debug-new-block-parent.custom-list-item) {
-    border: 2px dashed blue !important;
-  }
-
-  /* Dark mode support for custom lists */
-  @media (prefers-color-scheme: dark) {
-    :global(.custom-list-item .list-bullet) {
-      color: #aaa;
-    }
-    
-    :global(.custom-list-item.task-item.dropped .task-checkbox) {
-      background-color: #555;
-      border-color: #555;
-    }
-  }
 </style>
 
 
