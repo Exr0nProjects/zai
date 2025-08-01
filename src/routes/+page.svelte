@@ -1931,10 +1931,20 @@
   }
 
   /* Custom List Item Styles - Override block-with-info padding/margins */
+  @media (min-width: 768px) {
   :global(.custom-list-item.block-with-info) {
     position: relative;
     padding: 0.25rem 0.5rem 0.25rem 1.25rem; /* Keep top/right/bottom padding, increase left for pseudo-element */
     min-height: 1.5rem;
+    }
+  }
+  @media (max-width: 768px) {
+    :global(.custom-list-item) {
+      position: relative;
+      padding: 0.25rem 0.5rem 0.25rem 1.25rem; /* Keep top/right/bottom padding, increase left for pseudo-element */
+      min-height: 1.5rem;
+      padding-left: 1.25rem !important;
+    }
   }
 
   /* Bullet list styling */
@@ -1944,7 +1954,7 @@
     left: 0; /* Account for block-with-info padding */
     width: 1rem;
     text-align: center;
-    color: #666;
+    color: var(--fg);
     font-weight: bold;
   }
 
