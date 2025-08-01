@@ -491,7 +491,6 @@
           parsers: PARSERS,
           throttleDelay: 100, // Process patterns every 100ms while typing
         }),
-        CustomListItem,
       ],
       // No initial content - Y.js will manage document state
     });
@@ -775,8 +774,6 @@
       editor.on('selectionUpdate', () => {
         updateDocumentTitle();
       });
-      
-
       
       // Initial tag extraction and title update
       setTimeout(() => {
@@ -1147,8 +1144,6 @@
       }
     }
   }
-  
-
   
   function toggleSearchExpanded() {
     isSearchExpanded = !isSearchExpanded;

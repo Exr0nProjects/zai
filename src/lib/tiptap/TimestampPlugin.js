@@ -102,6 +102,28 @@ export const TimestampPlugin = Extension.create({
           const docChanged = transactions.some(tr => tr.docChanged);
           if (!docChanged) return null;
           
+          // Check for deleted nodes and update parent children arrays
+          const oldBlockIds = new Set();
+          const newBlockIds = new Set();
+          const parentMap = new Map();
+          
+          oldState.doc.descendants((node) => {
+            if (node.attrs?.blockId) {
+              oldBlockIds.add(node.attrs.blockId);
+              if (node.attrs.parentId) {
+                parentMap.set(node.attrs.blockId, node.attrs.parentId);
+              }
+            }
+          });
+          
+          newState.doc.descendants((node) => {
+            if (node.attrs?.blockId) {
+              newBlockIds.add(node.attrs.blockId);
+            }
+          });
+          
+          const deletedBlockIds = [...oldBlockIds].filter(id => !newBlockIds.has(id));
+          
           // Skip processing for timeline sort transactions
           const isTimelineSort = transactions.some(tr => tr.getMeta('timelineSort'));
           if (isTimelineSort) {
@@ -215,7 +237,7 @@ export const TimestampPlugin = Extension.create({
             
             // Update parent children arrays in the same transaction
             parentChildUpdates.forEach((childIds, parentId) => {
-              newState.doc.descendants((node, pos) => {
+              tr.doc.descendants((node, pos) => {
                 if (node.attrs && node.attrs.blockId === parentId) {
                   const currentChildren = node.attrs.children || [];
                   const newChildren = [...new Set([...currentChildren, ...childIds])]; // Merge and deduplicate
@@ -229,8 +251,34 @@ export const TimestampPlugin = Extension.create({
                 }
               });
             });
+          }
+          
+          // Handle node deletions - update parent children arrays
+          if (deletedBlockIds.length > 0) {
+            if (!tr) tr = newState.tr;
+            
+            deletedBlockIds.forEach(deletedId => {
+              const parentId = parentMap.get(deletedId);
+              if (parentId) {
+                tr.doc.descendants((node, pos) => {
+                  if (node.attrs?.blockId === parentId) {
+                    const currentChildren = node.attrs.children || [];
+                    const newChildren = currentChildren.filter(id => id !== deletedId);
+                    
+                    tr.setNodeMarkup(pos, null, {
+                      ...node.attrs,
+                      children: newChildren
+                    });
+                    return false;
+                  }
+                });
+              }
+            });
+          }
+          
+          if (tr) {
 
-            tr.setMeta('zai-idRelabel', true);
+                        tr.setMeta('zai-idRelabel', true);
           }
           
           return tr;

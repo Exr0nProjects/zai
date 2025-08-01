@@ -9,6 +9,7 @@ import Blockquote from '@tiptap/extension-blockquote';
 import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import OrderedList from '@tiptap/extension-ordered-list';
 import CodeBlock from '@tiptap/extension-code-block';
+
 import { getBlockTimeDisplay } from '../utils/timeGutter.js';
 
 // Common block attributes for all extended nodes
@@ -56,6 +57,19 @@ function getBlockAttributes() {
         'data-timeline-time': attributes.timelineTime,
       }),
       parseHTML: (element) => element.getAttribute('data-timeline-time'),
+    },
+    children: {
+      default: [],
+      renderHTML: (attributes) => ({
+        'data-children': JSON.stringify(attributes.children || []),
+      }),
+      parseHTML: (element) => {
+        try {
+          return JSON.parse(element.getAttribute('data-children') || '[]');
+        } catch {
+          return [];
+        }
+      },
     },
   };
 }
@@ -112,6 +126,19 @@ function getBlockAttributesConditional() {
       },
       parseHTML: (element) => element.getAttribute('data-timeline-time'),
     },
+    children: {
+      default: [],
+      renderHTML: (attributes) => ({
+        'data-children': JSON.stringify(attributes.children || []),
+      }),
+      parseHTML: (element) => {
+        try {
+          return JSON.parse(element.getAttribute('data-children') || '[]');
+        } catch {
+          return [];
+        }
+      },
+    },
   };
 }
 
@@ -127,7 +154,7 @@ function extendWithBlockAttributes(BaseNode, name, useConditional = false) {
     },
     
 
-  });
+    });
 }
 
 // Create all extended node types

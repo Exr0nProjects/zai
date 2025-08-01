@@ -7,6 +7,8 @@ import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { serializeToMarkdown } from './MarkdownClipboard';
 
+const LOG = false;
+
 // Global state for timeline sorting
 let sortQueue = new Set(); // Queue of block IDs that need sorting
 let isProcessing = false; // Prevent recursive calls
@@ -70,7 +72,6 @@ function sortFromQueue() {
   isProcessing = true;
   try {
     const blockId = sortQueue.values().next().value;
-    // console.log('performSort', blockId)
     
     const state = editorView.state;
     const blockInfo = findBlockById(state, blockId);
@@ -82,8 +83,6 @@ function sortFromQueue() {
     if (!blockInfo || !blockInfo.timelineTime) return;
     if (!isLeafBlock(blockInfo)) return;
 
-    // console.log('checking blockinfo', !!blockInfo, blockInfo.timelineTime, !isCursorInBlock(state, blockId), !isLeafBlock(blockInfo))
-    // console.log('found block!', blockInfo.blockId, blockInfo, blockInfo.node.content)
 
     moveBlockToTimelinePosition(editorView, blockInfo);
 
@@ -195,8 +194,6 @@ function findBlockWithTimestamp(state, pos) {
  */
 function firstAncestorWithSiblings(state, startPos) {
   const $pos = state.doc.resolve(startPos+1);
-  // console.log('firstAncestorWithSiblings', $pos.depth)
-  // printPositions(state.doc.content, [startPos])
   for (let depth = $pos.depth; depth >= 1; depth--) {
     const node = $pos.node(depth);
     const parent = $pos.node(depth - 1);
@@ -253,7 +250,7 @@ function findTimelineInsertionPosition(state, blockInfo) {
     
     // Check if this is our own top-level block
     if (pos >= topLevelBlock.from && pos <= topLevelBlock.to) {
-      console.log('found own node', node.attrs.blockId, node.attrs.timelineTime, node.content)
+      if (LOG) console.log('found own node', node.attrs.blockId, node.attrs.timelineTime, node.content)
       seenOwnNode = true;
       return false;
     }
@@ -272,7 +269,7 @@ function findTimelineInsertionPosition(state, blockInfo) {
       if (seenInsertionPoint || seenOwnNode) {
         const timeDiff = Math.abs(nodeDate.getTime() - targetDate.getTime());
         if (timeDiff >= 60 * 1000) { // 1 minute = 60,000ms
-          console.log('found node outside minute range', node.attrs.blockId, node.attrs.timelineTime, node.content)
+          if (LOG) console.log('found node outside minute range', node.attrs.blockId, node.attrs.timelineTime, node.content)
           hasNodeOutsideMinuteRange = true;
         }
       }
@@ -281,7 +278,7 @@ function findTimelineInsertionPosition(state, blockInfo) {
     return false; // Don't traverse into child nodes
   });
 
-  console.log(blockInfo.blockId, 'seenInsertionPoint', seenInsertionPoint, 'hasNodeOutsideMinuteRange', hasNodeOutsideMinuteRange)
+  if (LOG) console.log(blockInfo.blockId, 'seenInsertionPoint', seenInsertionPoint, 'hasNodeOutsideMinuteRange', hasNodeOutsideMinuteRange)
   
   // Return insertPos only if we found at least one node outside the minute range
   // or if we didn't find an insertion point (append to end)
@@ -300,10 +297,8 @@ function moveBlockToTimelinePosition(view, blockInfo) {
 
   const { state } = view;
   const tr = state.tr;
-  // console.log('moveBlockToTimelinePosition', blockInfo)
   
   const topLevelBlock = firstAncestorWithSiblings(state, blockInfo.pos);
-  // console.log('topLevelBlock', topLevelBlock)
   if (!topLevelBlock) return;
   
   const insertPos = findTimelineInsertionPosition(state, blockInfo);
@@ -316,7 +311,6 @@ function moveBlockToTimelinePosition(view, blockInfo) {
   state.doc.descendants((node, pos) => {
     if (pos === insertPos && node.isBlock && node.attrs?.timelineTime) {
       const nodeDate = new Date(node.attrs.timelineTime);
-      // console.log('nodeDate', nodeDate.getTime(), 'targetDate', targetDate.getTime(), nodeDate.getTime() === targetDate.getTime())
       if (nodeDate.getTime() === targetDate.getTime()) {
         shouldSkipMove = true;
         return false; // Stop traversal
@@ -327,26 +321,17 @@ function moveBlockToTimelinePosition(view, blockInfo) {
   
   if (shouldSkipMove) return;
 
-  // console.log('moving ', blockInfo.blockId, blockInfo.timelineTime, 'from', topLevelBlock.from, topLevelBlock.to, 'to', insertPos)
-  
   // Don't move if it's already in the right position
   if (insertPos >= topLevelBlock.from && insertPos <= topLevelBlock.to) return;
   if (topLevelBlock.from >= topLevelBlock.to) return;
 
-  // console.log('passed invalid ranges cehck')
-
   const slice = state.doc.slice(topLevelBlock.from, topLevelBlock.to + 1);
   if (slice.size === 0) return;
-  // console.log('passed slice check', slice)
-
-  // printPositions(state.doc.content, [topLevelBlock.from, topLevelBlock.to])
-  // printPositions(state.doc.content, [insertPos])
   
   if (insertPos > topLevelBlock.to) {
     tr.insert(insertPos, slice.content);
     tr.deleteRange(Math.max(topLevelBlock.from-1, 0), topLevelBlock.to);
   } else {
-    // console.log('sorting backwards', topLevelBlock.from, topLevelBlock.to, insertPos)
     tr.deleteRange(Math.max(topLevelBlock.from-1, 0), topLevelBlock.to);
     tr.insert(insertPos, slice.content);
   }
