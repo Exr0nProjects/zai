@@ -31,9 +31,9 @@ export const serializeToMarkdown = (content) => {
     
     switch (node.type.name) {
       case 'paragraph':
-        if (node.textContent.trim()) {
-          markdown += processTextContent(node) + '\n';
-        }
+        // Always add a newline for paragraphs, even if empty
+        const content = processTextContent(node);
+        markdown += content + '\n';
         break;
         
       case 'heading':

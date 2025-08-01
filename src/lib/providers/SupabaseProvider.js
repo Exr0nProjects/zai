@@ -8,13 +8,16 @@ const LOG = false;
  * Provides serverless collaboration without needing WebSocket server
  */
 export class SupabaseProvider {
-  constructor(documentName, doc, user) {
+  constructor(documentName, doc, user, isOnline = true) {
     this.documentName = documentName;
     this.doc = doc;
     this.user = user;
     this.synced = false;
     this.channel = null;
     this.saveTimeout = null;
+    this.isOffline = !isOnline;
+    this.pendingSave = false;
+    this.enabled = true;
     
     // Bind methods
     this.handleUpdate = this.handleUpdate.bind(this);
@@ -23,11 +26,69 @@ export class SupabaseProvider {
     // Set up Y.js document listeners
     this.doc.on('update', this.handleUpdate);
     
-    // Initialize
-    this.init();
+    // Only initialize if online
+    if (isOnline) {
+      this.init();
+    } else {
+      if (LOG) console.log('SupabaseProvider: Starting in offline mode');
+    }
+  }
+  
+  // Offline control methods
+  enable() {
+    if (LOG) console.log('SupabaseProvider: Going online');
+    this.isOffline = false;
+    this.enabled = true;
+    
+    // Initialize if not already done
+    if (!this.synced) {
+      this.init();
+    } else {
+      // Re-establish realtime connection
+      this.setupRealtimeSubscription();
+    }
+    
+    // Save any pending changes immediately (don't wait for timeout)
+    if (this.pendingSave) {
+      if (LOG) console.log('SupabaseProvider: Saving pending changes after going online');
+      this.saveDocument();
+      this.pendingSave = false;
+    }
+    
+    // Also trigger a save to catch any changes that might have been missed
+    // This ensures we sync the current document state
+    setTimeout(() => {
+      if (!this.isOffline) { // Double-check we're still online
+        if (LOG) console.log('SupabaseProvider: Performing sync save after reconnection');
+        this.saveDocument();
+      }
+    }, 2000); // Wait 2 seconds to let realtime connection establish
+  }
+  
+  disable() {
+    if (LOG) console.log('SupabaseProvider: Going offline');
+    this.isOffline = true;
+    this.enabled = false;
+    
+    // Clean up realtime subscription but keep Y.js listeners
+    if (this.channel) {
+      supabase.removeChannel(this.channel);
+      this.channel = null;
+    }
+    
+    // Clear any pending saves (they'll be retried when back online)
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+      this.saveTimeout = null;
+    }
   }
   
   async init() {
+    if (this.isOffline) {
+      if (LOG) console.log('SupabaseProvider: Skipping init - offline');
+      return;
+    }
+    
     try {
       // Load initial document state from Supabase
       await this.loadDocument();
@@ -45,6 +106,11 @@ export class SupabaseProvider {
 
   
   async loadDocument() {
+    if (this.isOffline) {
+      if (LOG) console.log('SupabaseProvider: Skipping loadDocument - offline');
+      return;
+    }
+    
     if (!this.user?.id) {
       console.warn('SupabaseProvider: No user ID available');
       return;
@@ -153,6 +219,12 @@ export class SupabaseProvider {
   }
   
   async saveDocument() {
+    if (this.isOffline) {
+      if (LOG) console.log('SupabaseProvider: Marking save as pending - offline');
+      this.pendingSave = true;
+      return;
+    }
+    
     if (!this.user?.id) {
       console.warn('SupabaseProvider: No user ID available for saving');
       return;
@@ -187,12 +259,20 @@ export class SupabaseProvider {
     if (LOG) console.log('⚡ Y.js update detected:', {
       updateLength: update.length,
       origin: origin === this ? 'REMOTE' : 'LOCAL',
-      willSave: origin !== this
+      willSave: origin !== this && !this.isOffline,
+      isOffline: this.isOffline
     });
     
     // Don't save updates that came from Supabase (to avoid loops)
     if (origin === this) {
       if (LOG) console.log('⚡ Ignoring remote update (from Supabase)');
+      return;
+    }
+    
+    // If offline, just mark as pending
+    if (this.isOffline) {
+      this.pendingSave = true;
+      if (LOG) console.log('⚡ Marking update as pending - offline');
       return;
     }
     
@@ -207,6 +287,11 @@ export class SupabaseProvider {
   }
   
   setupRealtimeSubscription() {
+    if (this.isOffline) {
+      if (LOG) console.log('🔔 Skipping realtime setup - offline');
+      return;
+    }
+    
     if (!this.user?.id) {
       console.warn('🔔 Cannot setup realtime: No user ID');
       return;

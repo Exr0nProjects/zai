@@ -8,11 +8,8 @@ executive stack
 - links
   - wrong place upon creation (keyboard shortcut or button)
   - doesn't focus upon creation
-- hover doesn't work on blocks (show block info, link edit tooltip)
-- maintain section hlines in js because it's broken rn? 
 - hidden blocks
-  - filter/search?  (perspectives)
-  - auto-suggest 
+  - auto-suggest search?
   - ensure you can't delete past block boundaries etc (or skip the content over the hidden ones?) no, should just show a horizontal bar for hidden blocks 
   - date detection. is there a general api for detecting stuff while writing? i guess i could use @
   

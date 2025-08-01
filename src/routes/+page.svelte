@@ -310,6 +310,17 @@
     }, 800); // Extra delay to ensure editor is fully loaded
   }
   
+  // Handle user login/logout and SupabaseProvider management
+  $: if ($user && !supabaseProvider && isOnline) {
+    // User logged in while online - create SupabaseProvider
+    const documentName = 'timeline-notes';
+    supabaseProvider = new SupabaseProvider(documentName, ydoc, $user, isOnline);
+  } else if (!$user && supabaseProvider) {
+    // User logged out - clean up SupabaseProvider
+    supabaseProvider.destroy();
+    supabaseProvider = null;
+  }
+  
   // Auto-show edit mode for new empty links
   $: if (editor && editor.isActive('link')) {
     const { href } = editor.getAttributes('link');
@@ -364,8 +375,25 @@
     isOnline = navigator.onLine;
     
     // Listen for online/offline events
-    window.addEventListener('online', () => isOnline = true);
-    window.addEventListener('offline', () => isOnline = false);
+    window.addEventListener('online', () => {
+      isOnline = true;
+      // Enable SupabaseProvider when coming back online
+      if (supabaseProvider) {
+        supabaseProvider.enable();
+      } else if ($user) {
+        // Create SupabaseProvider if it doesn't exist but user is available
+        const documentName = 'timeline-notes';
+        supabaseProvider = new SupabaseProvider(documentName, ydoc, $user, true);
+      }
+    });
+    
+    window.addEventListener('offline', () => {
+      isOnline = false;
+      // Disable SupabaseProvider when going offline
+      if (supabaseProvider) {
+        supabaseProvider.disable();
+      }
+    });
     
     // Initialize Tiptap editor with basic extensions
     editor = new Editor({
@@ -486,8 +514,8 @@
         //   debugMode: true, // Set to true for debugging timeline sorting
         // }),
         InlineParser.configure({
-          enabled: true,
-          debugMode: true, // Set to true for debugging
+          enabled: false,
+          debugMode: false, // Set to true for debugging
           parsers: PARSERS,
           throttleDelay: 100, // Process patterns every 100ms while typing
         }),
@@ -734,9 +762,9 @@
     // Initialize Supabase provider for serverless real-time collaboration
     const documentName = 'timeline-notes'; // Simple document name per user
     
-    // Initialize Supabase provider when user is available
-    if ($user) {
-      supabaseProvider = new SupabaseProvider(documentName, ydoc, $user);
+    // Initialize Supabase provider when user is available and online
+    if ($user && isOnline) {
+      supabaseProvider = new SupabaseProvider(documentName, ydoc, $user, isOnline);
     }
     
     // Set initial content only once when Y.js document is synced
