@@ -4,9 +4,20 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'http://localhost:54321
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'your-anon-key-here'
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+    flowType: 'pkce'
+  },
   realtime: {
     params: {
       eventsPerSecond: 50 // Increased for better Y.js performance
+    }
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'zai-app'
     }
   }
 }) 

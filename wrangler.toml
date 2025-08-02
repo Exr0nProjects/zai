@@ -3,4 +3,10 @@ name = "zai"
 
 [assets]
 directory            = "./build"                   
-not_found_handling   = "single-page-application"     # SPA fallback  [oai_citation:7‡Cloudflare Docs](https://developers.cloudflare.com/workers/static-assets/)
+not_found_handling   = "single-page-application"     # SPA fallback
+
+[vars]
+# These will be available as import.meta.env.VITE_* in your app
+VITE_SUPABASE_URL = "https://ahjvcdrorifpxuxqhepm.supabase.co"
+# Add your actual anon key as a secret instead of here
+# VITE_SUPABASE_ANON_KEY = "your-key-here"

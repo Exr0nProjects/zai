@@ -1877,6 +1877,10 @@
   }
 
   @media (max-width: 768px) {
+    :global(*) {
+      touch-action: manipulation; /* Disable double-tap zoom on mobile */
+    }
+
     :global(body) {
       position: fixed;
       top: 0;
