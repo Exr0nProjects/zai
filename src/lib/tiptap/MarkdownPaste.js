@@ -157,6 +157,20 @@ const calculateParentId = (nodeIndex, nodeInfos, currentNode) => {
     return null; // First node will get assigned proper parent when inserted
   }
   
+  // Check if the previous two lines were empty paragraphs - if so, set parent to null
+  if (nodeIndex >= 2) {
+    const previousNode = nodeInfos[nodeIndex - 1];
+    const previousPreviousNode = nodeInfos[nodeIndex - 2];
+    console.log('previousNode', previousNode)
+    
+    // Check if both previous nodes are empty top-level paragraphs
+    if (previousNode.isEmptyParagraph && previousNode.indentLevel === 0 &&
+        previousPreviousNode.isEmptyParagraph && previousPreviousNode.indentLevel === 0) {
+          console.log('nulling', currentNode)
+      return null; // No parent when previous two lines were empty
+    }
+  }
+  
   // Look backwards for the appropriate parent
   for (let j = nodeIndex - 1; j >= 0; j--) {
     const candidateNode = nodeInfos[j];
@@ -217,7 +231,7 @@ const parseMarkdown = (text, schema) => {
     if (!line.trim()) {
       const blockId = generateBlockId();
       const createdAt = getCurrentTimestamp();
-      const nodeInfo = { type: 'paragraph', blockId, indentLevel: 0 };
+      const nodeInfo = { type: 'paragraph', blockId, indentLevel: 0, isEmptyParagraph: true };
       const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
       
       nodeInfos.push(nodeInfo);

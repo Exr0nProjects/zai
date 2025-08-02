@@ -345,23 +345,23 @@ export class StreamingSearch {
           const subtreeMatches = nodeMatches || this.hasMatchingDescendants(node, queryWords);
 
           if (subtreeMatches) {
-            // This node should be shown, and so should all its ancestors and children
-            this.markAncestorsForVisibility(node, pos, shouldShowBlocks);
             shouldShowBlocks.add(node.attrs.blockId);
+
+            // Recurse into children
+            let childPos = pos + 1;
+            node.content.forEach((child, index) => {
+              collectMatches(child, childPos, depth + 1);
+              childPos += child.nodeSize;
+            });
+
             // Also mark all children (and their descendants) for visibility
-            this.markChildrenForVisibility(node.attrs.blockId, shouldShowBlocks, allNodes);
             matchedCount++;
           }
 
           processedCount++;
         }
 
-        // Recurse into children
-        let childPos = pos + 1;
-        node.content.forEach((child, index) => {
-          collectMatches(child, childPos, depth + 1);
-          childPos += child.nodeSize;
-        });
+
       };
 
       // Start first pass from document root
@@ -370,6 +370,12 @@ export class StreamingSearch {
         collectMatches(child, rootPos, 0);
         rootPos += child.nodeSize;
       });
+
+      for (const blockId of shouldShowBlocks) {
+        const nodeInfo = allNodes.find(n => n.node.attrs?.blockId === blockId);
+        this.markAncestorsForVisibility(nodeInfo.node, nodeInfo.pos, shouldShowBlocks);
+        this.markChildrenForVisibility(blockId, shouldShowBlocks, allNodes);
+      }
 
       // Second pass: Apply show/hide decisions
       for (const { node } of allNodes) {
