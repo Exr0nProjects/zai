@@ -1130,6 +1130,22 @@
     return hasContent;
   }
   
+  // Clear search and scroll to center the note that was in the center of screen
+  function clearSearchWithScrollToCenter() {
+    if (!streamingSearch || !editor) return;
+    
+    // Find the current center block before clearing search
+    const centerBlock = streamingSearch.findCenterScreenBlock();
+    
+    if (centerBlock) {
+      // Store the center block ID temporarily
+      streamingSearch.centerBlockId = centerBlock.blockId;
+    }
+    
+    // Clear the search query which will trigger handleSearch
+    searchQuery = '';
+  }
+  
   async function handleSearch() {
     if (!streamingSearch || !editor) {
       // console.warn('❌ Missing dependencies - streamingSearch:', !!streamingSearch, 'editor:', !!editor);
@@ -1140,6 +1156,7 @@
     
     if (query === '') {
       // Empty query - clear search and show all blocks
+      // If we have a stored center block, ensure it gets scrolled to
       streamingSearch.clearSearch();
       searchProgress = { processed: 0, total: 0, matched: 0, completed: true };
       return;
@@ -1547,7 +1564,7 @@
                   focusOnPinnedBlock();
                 } else if (e.key === 'Escape') {
                   e.preventDefault();
-                  focusOnPinnedBlock();
+                  clearSearchWithScrollToCenter();
                 }
               }}
               on:focus={() => {/* placeholder will show 'save' when expanded */}}
@@ -1600,7 +1617,7 @@
                     focusOnPinnedBlock();
                   } else if (e.key === 'Escape') {
                     e.preventDefault();
-                    focusOnPinnedBlock();
+                    clearSearchWithScrollToCenter();
                   }
                 }}
               />
