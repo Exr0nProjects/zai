@@ -32,9 +32,9 @@
   import Link from '@tiptap/extension-link';
   import BubbleMenu from '@tiptap/extension-bubble-menu';
   import { generateBlockId, getCurrentTimestamp } from '$lib/utils/snowflake.js';
-  // import { TagMention } from '$lib/tiptap/TagMention.js';
-  // import { TagParser } from '$lib/tiptap/TagParser.js';
-  // import { InputRuleTagParser } from '$lib/tiptap/InputRuleTagParser.js';
+  import { TagMention } from '$lib/tiptap/TagMention.js';
+  import { TagParser } from '$lib/tiptap/TagParser.js';
+  import { InputRuleTagParser } from '$lib/tiptap/InputRuleTagParser.js';
   import { KeyboardNavigation } from '$lib/tiptap/KeyboardNavigationPlugin.js';
   import { HiddenBlocksPlugin } from '$lib/tiptap/HiddenBlocksPlugin.js';
   import { tagManager, isTagProcessing, tagStats } from '$lib/utils/tagManager.js';
@@ -548,9 +548,9 @@
         TimestampPlugin, // Automatically adds timestamps without interfering with keymaps
         MarkdownClipboard, // Copy/cut as markdown instead of HTML
         MarkdownPaste, // Parse pasted markdown into proper nodes
-        // TagMention, // Tag mentions with # trigger - disabled, using pattern highlighting instead
-        // TagParser, // Auto-convert hashtags to tag mentions - disabled, using pattern highlighting instead  
-        // InputRuleTagParser, // Convert hashtags on typing - disabled, using pattern highlighting instead
+        TagMention, // Tag mentions with # trigger for interactive tag creation
+        TagParser, // Auto-convert hashtags to tag mentions  
+        InputRuleTagParser, // Convert hashtags on typing to mention nodes
         KeyboardNavigation, // Remove tab index from irrelevant elements
         HiddenBlocksPlugin, // Enable hiding blocks with zero height and no interaction
         Placeholder.configure({
@@ -563,12 +563,12 @@
         //   enabled: true,
         //   debugMode: true, // Set to true for debugging timeline sorting
         // }),
-        InlineParser.configure({
-          enabled: false,
-          debugMode: false, // Set to true for debugging
-          parsers: PARSERS,
-          throttleDelay: 100, // Process patterns every 100ms while typing
-        }),
+        // InlineParser.configure({
+        //   enabled: false,
+        //   debugMode: false, // Set to true for debugging
+        //   parsers: PARSERS,
+        //   throttleDelay: 100, // Process patterns every 100ms while typing
+        // }),
       ],
       // No initial content - Y.js will manage document state
     });
@@ -757,8 +757,11 @@
         };
       });
 
-      // Initialize streaming search immediately after editor creation
-      streamingSearch = new StreamingSearch(editor);
+          // Initialize streaming search immediately after editor creation
+    streamingSearch = new StreamingSearch(editor);
+    
+    // Set global editor view for TagParser
+    window.editorView = editor.view;
 
     // Add link interaction handlers after editor is created
     setTimeout(() => {

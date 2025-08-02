@@ -40,7 +40,7 @@ self.addEventListener('message', async (event) => {
         break;
       
       case 'ADD_TAG':
-        await addTag(data.tag, requestId);
+        await addTag(event.data.tag, requestId);
         break;
       
       default:

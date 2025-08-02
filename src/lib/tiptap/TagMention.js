@@ -8,6 +8,8 @@ import { PluginKey } from '@tiptap/pm/state';
 import tippy from 'tippy.js';
 import { tagManager } from '$lib/utils/tagManager.js';
 
+const LOG = false;
+
 // Suggestion list component for rendering tag suggestions
 function createSuggestionList() {
   let component;
@@ -20,7 +22,7 @@ function createSuggestionList() {
       selectedIndex = 0;
       currentItems = props.items || [];
       
-      console.log('🚀 TagMention onStart:', {
+      if (LOG) console.log('🚀 TagMention onStart:', {
         itemsLength: currentItems.length,
         items: currentItems.map(i => i.label)
       });
@@ -48,7 +50,7 @@ function createSuggestionList() {
       selectedIndex = 0;
       currentItems = props.items || []; // Store items for use in onKeyDown
       
-      console.log('🔄 TagMention onUpdate:', {
+      if (LOG) console.log('🔄 TagMention onUpdate:', {
         itemsLength: currentItems.length,
         query: props.query,
         items: currentItems.map(i => ({ label: i.label, isNew: i.isNew }))
@@ -114,7 +116,7 @@ function createSuggestionList() {
     },
 
     onKeyDown: (props) => {
-      console.log('🎯 TagMention onKeyDown:', {
+      if (LOG) console.log('🎯 TagMention onKeyDown:', {
         key: props.event.key,
         ctrlKey: props.event.ctrlKey,
         currentItemsLength: currentItems.length,
@@ -123,7 +125,7 @@ function createSuggestionList() {
       
       // Only handle Tab as alias for Enter, let TipTap handle everything else
       if (props.event.key === 'Tab') {
-        console.log('🔄 Tab → treating as Enter for TipTap selection');
+        if (LOG) console.log('🔄 Tab → treating as Enter for TipTap selection');
         props.event.preventDefault();
         // Let TipTap's default Enter handling work (no synthetic events needed)
         return false; 
@@ -131,7 +133,7 @@ function createSuggestionList() {
       
       // Handle Ctrl+N/P for vim users (navigate only, let TipTap handle selection)
       if (props.event.ctrlKey && (props.event.key === 'n' || props.event.key === 'p')) {
-        console.log('🎯 Ctrl+N/P navigation');
+        if (LOG) console.log('🎯 Ctrl+N/P navigation');
         props.event.preventDefault();
         
         if (props.event.key === 'n') {
@@ -144,7 +146,7 @@ function createSuggestionList() {
       }
       
       // Let TipTap handle EVERYTHING else (Enter, Arrow keys, Escape, etc.)
-      console.log('⏩ TipTap handles:', props.event.key);
+      if (LOG) console.log('⏩ TipTap handles:', props.event.key);
       return false;
     },
 
@@ -252,7 +254,7 @@ export const TagMention = Mention.extend({
     
     // Command executed when a suggestion is selected
     command: ({ editor, range, props }) => {
-      console.log('🎯 Suggestion command executing:', { props });
+      if (LOG) console.log('🎯 Suggestion command executing:', { props });
       
       // Add tag to registry if it's new
       if (props.isNew) {
