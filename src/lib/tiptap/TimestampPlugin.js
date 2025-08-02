@@ -17,6 +17,38 @@ function isEmptyTopLevelParagraph(node, pos, doc) {
   return textContent.trim().length === 0;
 }
 
+// Helper function that applies the "two empty paragraphs" rule to parent ID calculation
+function getParentIdWithEmptyParagraphRule(doc, pos, tempIdMap = new Map()) {
+  const targetNodeTypes = ['paragraph', 'heading', 'customListItem', 'blockquote', 'codeBlock', 'horizontalRule'];
+  
+  // First, get the normal parent ID
+  let parentId = getParentId(doc, pos, tempIdMap);
+  
+  // Then check the two empty paragraphs rule
+  // Collect all nodes before the current position
+  const nodesBefore = [];
+  doc.descendants((node, nodePos) => {
+    if (nodePos >= pos) return false; // Stop when we reach current position
+    if (targetNodeTypes.includes(node.type.name)) {
+      nodesBefore.push({ node, pos: nodePos });
+    }
+  });
+  
+  // Check if the last two nodes before current are empty top-level paragraphs
+  if (nodesBefore.length >= 2) {
+    const lastTwo = nodesBefore.slice(-2);
+    const [secondLast, last] = lastTwo;
+    
+    if (isEmptyTopLevelParagraph(secondLast.node, secondLast.pos, doc) &&
+        isEmptyTopLevelParagraph(last.node, last.pos, doc)) {
+      // Two empty paragraphs in a row - third element should have parent null
+      return null;
+    }
+  }
+  
+  return parentId;
+}
+
 // Helper function to find parent blockId with temporary ID lookup
 function getParentId(doc, pos, tempIdMap = new Map(), returnSelf = false) {
   // LLM: find previous sibling, or parent (if none), and use that blockId as oldBlockId 
@@ -248,7 +280,10 @@ export const TimestampPlugin = Extension.create({
           const seenBlockIds = new Set();
           const nodesToUpdate = [];
 
-          // First pass: identify all nodes and detect duplicates
+          // Create temporary ID map for parent ID calculation
+          const tempIdMap = new Map();
+          
+          // First pass: identify all nodes and detect duplicates or incorrect parent relationships
           newState.doc.descendants((node, pos) => {
             if (targetNodeTypes.includes(node.type.name)) {
               
@@ -276,6 +311,25 @@ export const TimestampPlugin = Extension.create({
                   });
                 } else {
                   seenBlockIds.add(node.attrs.blockId);
+                  
+                  // Check if the node's current parentId matches what it should be (respecting two empty paragraphs rule)
+                  const expectedParentId = getParentIdWithEmptyParagraphRule(newState.doc, pos, tempIdMap);
+                  const currentParentId = node.attrs.parentId;
+                  
+                  if (expectedParentId !== currentParentId) {
+                    // Parent relationship needs updating
+                    nodesToUpdate.push({
+                      pos,
+                      node,
+                      reason: 'parent-mismatch',
+                      oldBlockId: node.attrs.blockId,
+                      newBlockId: node.attrs.blockId, // Keep same ID
+                      newTimestamp: node.attrs.createdAt || getCurrentTimestamp(), // Keep same timestamp
+                      correctParentId: expectedParentId
+                    });
+                    
+                    if (LOG) console.log(`🔗 Parent mismatch for ${node.attrs.blockId.slice(-8)}: current=${currentParentId?.slice(-8) || 'none'}, expected=${expectedParentId?.slice(-8) || 'none'}`);
+                  }
                 }
               }
             }
@@ -285,66 +339,25 @@ export const TimestampPlugin = Extension.create({
           if (nodesToUpdate.length > 0) {
             tr = newState.tr;
             
-            // Create temporary ID map to track newly assigned IDs within this transaction
-            const tempIdMap = new Map();
+            // Use existing tempIdMap and add tracking for parent-child updates
             const parentChildUpdates = new Map(); // Track parent children to add
             const parentChildRemovals = new Map(); // Track parent children to remove
             
-            nodesToUpdate.forEach(({ pos, node, reason, oldBlockId, newBlockId, newTimestamp }) => {
-              // const parentId = oldBlockId || getParentId(newState.doc, pos, tempIdMap);
-              let parentId = getParentId(newState.doc, pos, tempIdMap); // TODO: `paragraph \n - bullet` still paragraph is bullet's sibling, not the listitem?
+            nodesToUpdate.forEach(({ pos, node, reason, oldBlockId, newBlockId, newTimestamp, correctParentId }) => {
+              // For parent-mismatch, use the pre-calculated correct parent ID, otherwise calculate with empty paragraph rule
+              let parentId = reason === 'parent-mismatch' ? correctParentId : getParentIdWithEmptyParagraphRule(newState.doc, pos, tempIdMap);
               const oldParentId = node.attrs.parentId; // Track the old parent to update its children array
               
-              // Special case for duplicate blockIds: check if parent and its parent are both empty top-level paragraphs
-              if (reason === 'duplicate-id' && parentId) {
-                // Find the original node with the duplicate blockId
-                let originalNode = null;
-                let originalPos = null;
-                newState.doc.descendants((n, p) => {
-                  if (n.attrs?.blockId === oldBlockId && p !== pos) {
-                    originalNode = n;
-                    originalPos = p;
-                    return false; // Stop traversal
-                  }
-                });
-                
-                if (originalNode && originalPos !== null) {
-                  // Check if the original node is an empty top-level paragraph
-                  if (isEmptyTopLevelParagraph(originalNode, originalPos, newState.doc)) {
-                    // Check if the original node's parent is also an empty top-level paragraph
-                    if (originalNode.attrs?.parentId) {
-                      let originalParentNode = null;
-                      let originalParentPos = null;
-                      newState.doc.descendants((n, p) => {
-                        if (n.attrs?.blockId === originalNode.attrs.parentId) {
-                          originalParentNode = n;
-                          originalParentPos = p;
-                          return false; // Stop traversal
-                        }
-                      });
-                      
-                      if (originalParentNode && originalParentPos !== null && 
-                          isEmptyTopLevelParagraph(originalParentNode, originalParentPos, newState.doc)) {
-                        // Both parent and grandparent are empty top-level paragraphs, set parent to null
-                        parentId = null;
-                        
-                        // Also remove this node from old parent's children array since parentId is now null
-                        if (oldParentId) {
-                          if (!parentChildRemovals.has(oldParentId)) {
-                            parentChildRemovals.set(oldParentId, new Set());
-                          }
-                          parentChildRemovals.get(oldParentId).add(newBlockId);
-                        }
-                      }
-                    }
-                  }
-                }
-              }
+              // Note: Empty paragraph rule is now handled by getParentIdWithEmptyParagraphRule above
               
-              // Store the new ID in temp map for subsequent lookups
+              // Store the block ID in temp map for subsequent lookups
               tempIdMap.set(pos, newBlockId);
               
-              const preservedTimelineTime = node.attrs.timelineTime || newTimestamp;
+              // For parent-mismatch, preserve original timestamp, otherwise use newTimestamp
+              const preservedTimelineTime = reason === 'parent-mismatch' 
+                ? (node.attrs.timelineTime || node.attrs.createdAt || newTimestamp)
+                : (node.attrs.timelineTime || newTimestamp);
+                
               if (LOG && node.attrs.timelineTime && node.attrs.timelineTime !== newTimestamp) {
                 console.log(`🕒 TimestampPlugin preserving existing timelineTime:`, node.attrs.timelineTime, 'for block:', newBlockId.slice(-8));
               }
@@ -355,7 +368,7 @@ export const TimestampPlugin = Extension.create({
               tr.setNodeMarkup(pos, null, {
                 ...node.attrs,
                 blockId: newBlockId,
-                createdAt: newTimestamp,
+                createdAt: reason === 'parent-mismatch' ? (node.attrs.createdAt || newTimestamp) : newTimestamp,
                 timelineTime: preservedTimelineTime,
                 parentId,
                 children: preservedChildren,
@@ -383,7 +396,8 @@ export const TimestampPlugin = Extension.create({
               if (LOG) console.log(`🆕 ${reason}: ${node.type.name} at pos ${pos}`, {
                 oldBlockId: oldBlockId?.slice(-8) || 'none',
                 newBlockId: newBlockId.slice(-8),
-                parentId: parentId?.slice(-8) || 'none',
+                oldParentId: oldParentId?.slice(-8) || 'none',
+                newParentId: parentId?.slice(-8) || 'none',
                 timestamp: newTimestamp
               });
             });

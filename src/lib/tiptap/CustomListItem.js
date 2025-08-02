@@ -1,4 +1,4 @@
-import { mergeAttributes, textblockTypeInputRule } from '@tiptap/core';
+import { mergeAttributes } from '@tiptap/core';
 import Paragraph from '@tiptap/extension-paragraph';
 
 // Markdown serialization support
@@ -582,52 +582,74 @@ export const CustomListItem = Paragraph.extend({
   
   addInputRules() {
     return [
-      // Detect bullet list pattern: spaces + dash + space
-      textblockTypeInputRule({
+      // Custom input rule for bullet lists that preserves block identity
+      {
         find: /^(\s*)- $/,
-        type: this.type,
-        getAttributes: (match, context) => {
+        handler: ({ state, range, match }) => {
           const indentLevel = Math.floor(match[1].length / 2);
+          const { from, to } = range;
+          const $from = state.doc.resolve(from);
           
-          // Preserve all existing block attributes when converting
-          // Note: context might be undefined or not have a node property
-          const node = context?.node;
-          const preservedAttrs = node && node.attrs ? { ...node.attrs } : {};
+          // Find the current block node to preserve its attributes (same as button logic)
+          let currentBlockNode = null;
+          for (let depth = $from.depth; depth >= 0; depth--) {
+            const node = $from.node(depth);
+            if (node.attrs && node.attrs.blockId) {
+              currentBlockNode = node;
+              break;
+            }
+          }
           
-          return {
+          const preservedAttrs = currentBlockNode ? { ...currentBlockNode.attrs } : {};
+          
+          const tr = state.tr;
+          tr.replaceWith(from - match[0].length, to, this.type.create({
             ...preservedAttrs,
             listType: 'bullet',
             indentLevel,
             checkboxState: 'todo'
-          };
+          }));
+          
+          return tr;
         },
-      }),
+      },
       
-      // Detect checkbox list patterns: spaces + dash + optional space + checkbox + optional space
-      textblockTypeInputRule({
+      // Custom input rule for checkbox lists that preserves block identity
+      {
         find: /^(\s*)-\s*\[(.)\]\s*$/,
-        type: this.type,
-        getAttributes: (match, context) => {
+        handler: ({ state, range, match }) => {
           const indentLevel = Math.floor(match[1].length / 2);
           const checkboxChar = match[2];
+          const { from, to } = range;
+          const $from = state.doc.resolve(from);
           
           let checkboxState = 'todo';
           if (checkboxChar === 'x' || checkboxChar === 'X') checkboxState = 'done';
           else if (checkboxChar === '-') checkboxState = 'dropped';
           
-          // Preserve all existing block attributes when converting
-          // Note: context might be undefined or not have a node property
-          const node = context?.node;
-          const preservedAttrs = node && node.attrs ? { ...node.attrs } : {};
+          // Find the current block node to preserve its attributes (same as button logic)
+          let currentBlockNode = null;
+          for (let depth = $from.depth; depth >= 0; depth--) {
+            const node = $from.node(depth);
+            if (node.attrs && node.attrs.blockId) {
+              currentBlockNode = node;
+              break;
+            }
+          }
           
-          return {
+          const preservedAttrs = currentBlockNode ? { ...currentBlockNode.attrs } : {};
+          
+          const tr = state.tr;
+          tr.replaceWith(from - match[0].length, to, this.type.create({
             ...preservedAttrs,
             listType: 'checkbox',
             indentLevel,
             checkboxState
-          };
+          }));
+          
+          return tr;
         },
-      }),
+      },
     ];
   },
 });
