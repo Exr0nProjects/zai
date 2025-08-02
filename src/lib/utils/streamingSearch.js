@@ -373,8 +373,12 @@ export class StreamingSearch {
 
       for (const blockId of shouldShowBlocks) {
         const nodeInfo = allNodes.find(n => n.node.attrs?.blockId === blockId);
-        this.markAncestorsForVisibility(nodeInfo.node, nodeInfo.pos, shouldShowBlocks);
-        this.markChildrenForVisibility(blockId, shouldShowBlocks, allNodes);
+        if (nodeInfo) {
+          this.markAncestorsForVisibility(nodeInfo.node, nodeInfo.pos, shouldShowBlocks);
+          this.markChildrenForVisibility(blockId, shouldShowBlocks, allNodes);
+        } else { 
+          console.warn('nodeInfo not found for blockId', blockId);
+        }
       }
 
       // Second pass: Apply show/hide decisions

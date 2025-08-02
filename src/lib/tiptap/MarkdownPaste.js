@@ -161,12 +161,10 @@ const calculateParentId = (nodeIndex, nodeInfos, currentNode) => {
   if (nodeIndex >= 2) {
     const previousNode = nodeInfos[nodeIndex - 1];
     const previousPreviousNode = nodeInfos[nodeIndex - 2];
-    console.log('previousNode', previousNode)
     
     // Check if both previous nodes are empty top-level paragraphs
     if (previousNode.isEmptyParagraph && previousNode.indentLevel === 0 &&
         previousPreviousNode.isEmptyParagraph && previousPreviousNode.indentLevel === 0) {
-          console.log('nulling', currentNode)
       return null; // No parent when previous two lines were empty
     }
   }
@@ -257,7 +255,7 @@ const parseMarkdown = (text, schema) => {
       const text = headingMatch[2];
       const blockId = generateBlockId();
       const createdAt = getCurrentTimestamp();
-      const nodeInfo = { type: 'heading', blockId, indentLevel: 0 };
+      const nodeInfo = { type: 'heading', blockId, indentLevel: 0, isEmptyParagraph: false };
       const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
       
       nodeInfos.push(nodeInfo);
@@ -316,7 +314,7 @@ const parseMarkdown = (text, schema) => {
       
       const blockId = generateBlockId();
       const createdAt = getCurrentTimestamp();
-      const nodeInfo = { type: 'task', blockId, indentLevel };
+      const nodeInfo = { type: 'task', blockId, indentLevel, isEmptyParagraph: false };
       const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
       
       nodeInfos.push(nodeInfo);
@@ -373,7 +371,7 @@ const parseMarkdown = (text, schema) => {
       
       const blockId = generateBlockId();
       const createdAt = getCurrentTimestamp();
-      const nodeInfo = { type: 'bullet', blockId, indentLevel };
+      const nodeInfo = { type: 'bullet', blockId, indentLevel, isEmptyParagraph: false };
       const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
       
       nodeInfos.push(nodeInfo);
@@ -401,7 +399,7 @@ const parseMarkdown = (text, schema) => {
       const text = quoteMatch[1];
       const blockId = generateBlockId();
       const createdAt = getCurrentTimestamp();
-      const nodeInfo = { type: 'blockquote', blockId, indentLevel: 0 };
+      const nodeInfo = { type: 'blockquote', blockId, indentLevel: 0, isEmptyParagraph: false };
       const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
       
       nodeInfos.push(nodeInfo);
@@ -425,7 +423,7 @@ const parseMarkdown = (text, schema) => {
     if (inlineContent.length > 0) {
       const blockId = generateBlockId();
       const createdAt = getCurrentTimestamp();
-      const nodeInfo = { type: 'paragraph', blockId, indentLevel: 0 };
+      const nodeInfo = { type: 'paragraph', blockId, indentLevel: 0, isEmptyParagraph: false };
       const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
       
       nodeInfos.push(nodeInfo);
