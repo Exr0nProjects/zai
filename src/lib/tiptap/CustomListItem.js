@@ -607,7 +607,7 @@ export const CustomListItem = Paragraph.extend({
             ...preservedAttrs,
             listType: 'bullet',
             indentLevel,
-            checkboxState: 'todo'
+            checkboxState: null
           }));
           
           return tr;
