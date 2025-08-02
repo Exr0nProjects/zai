@@ -1,5 +1,6 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from 'prosemirror-state';
+import { generateBlockId, getCurrentTimestamp } from '../utils/snowflake.js';
 
 // Helper functions outside the extension to avoid scope issues
 const isMarkdown = (text) => {
@@ -150,9 +151,31 @@ const parseList = (lines, startIndex, listType, schema) => {
   return { listNodes: nodes, nextIndex: i };
 };
 
+// Helper function to calculate parent ID for markdown structure
+const calculateParentId = (nodeIndex, nodeInfos, currentNode) => {
+  if (nodeIndex === 0) {
+    return null; // First node will get assigned proper parent when inserted
+  }
+  
+  // Look backwards for the appropriate parent
+  for (let j = nodeIndex - 1; j >= 0; j--) {
+    const candidateNode = nodeInfos[j];
+    
+    // If candidate is at lesser indent level, it's our parent
+    if (candidateNode.indentLevel <= currentNode.indentLevel) {
+      return candidateNode.blockId;
+    } else {
+      return candidateNode.blockId; // hit something not a bullet or task, so use it as parent
+    }
+  }
+  
+  return null; // No parent found in markdown structure
+};
+
 const parseMarkdown = (text, schema) => {
   const lines = text.split('\n');
   const nodes = [];
+  const nodeInfos = []; // Track node metadata for parent calculation
   let i = 0;
   
   // Track indentation levels for dynamic bullet list parsing
@@ -164,7 +187,18 @@ const parseMarkdown = (text, schema) => {
     
     // Create empty paragraphs for empty lines
     if (!line.trim()) {
-      nodes.push(schema.nodes.paragraph.create({}, []));
+      const blockId = generateBlockId();
+      const createdAt = getCurrentTimestamp();
+      const nodeInfo = { type: 'paragraph', blockId, indentLevel: 0 };
+      const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
+      
+      nodeInfos.push(nodeInfo);
+      nodes.push(schema.nodes.paragraph.create({
+        blockId,
+        createdAt,
+        parentId,
+        children: []
+      }, []));
       i++;
       continue;
     }
@@ -174,10 +208,19 @@ const parseMarkdown = (text, schema) => {
     if (headingMatch) {
       const level = headingMatch[1].length;
       const text = headingMatch[2];
-      nodes.push(schema.nodes.heading.create(
-        { level },
-        schema.text(text)
-      ));
+      const blockId = generateBlockId();
+      const createdAt = getCurrentTimestamp();
+      const nodeInfo = { type: 'heading', blockId, indentLevel: 0 };
+      const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
+      
+      nodeInfos.push(nodeInfo);
+      nodes.push(schema.nodes.heading.create({
+        level,
+        blockId,
+        createdAt,
+        parentId,
+        children: []
+      }, schema.text(text)));
       i++;
       continue;
     }
@@ -219,11 +262,21 @@ const parseMarkdown = (text, schema) => {
       if (checkboxChar === 'x' || checkboxChar === 'X') checkboxState = 'done';
       else if (checkboxChar === '-') checkboxState = 'dropped';
       
+      const blockId = generateBlockId();
+      const createdAt = getCurrentTimestamp();
+      const nodeInfo = { type: 'task', blockId, indentLevel };
+      const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
+      
+      nodeInfos.push(nodeInfo);
       const inlineContent = parseInlineMarkdown(text, schema);
       nodes.push(schema.nodes.customListItem.create({
         listType: 'checkbox',
         indentLevel,
-        checkboxState
+        checkboxState,
+        blockId,
+        createdAt,
+        parentId,
+        children: []
       }, inlineContent));
       
       i++;
@@ -262,10 +315,20 @@ const parseMarkdown = (text, schema) => {
         currentLogicalLevel = Math.max(currentLogicalLevel, indentLevel);
       }
       
+      const blockId = generateBlockId();
+      const createdAt = getCurrentTimestamp();
+      const nodeInfo = { type: 'bullet', blockId, indentLevel };
+      const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
+      
+      nodeInfos.push(nodeInfo);
       const inlineContent = parseInlineMarkdown(text, schema);
       nodes.push(schema.nodes.customListItem.create({
         listType: 'bullet',
-        indentLevel
+        indentLevel,
+        blockId,
+        createdAt,
+        parentId,
+        children: []
       }, inlineContent));
       
       i++;
@@ -276,10 +339,18 @@ const parseMarkdown = (text, schema) => {
     const quoteMatch = line.match(/^>\s*(.*)$/);
     if (quoteMatch) {
       const text = quoteMatch[1];
-      nodes.push(schema.nodes.blockquote.create(
-        {},
-        schema.nodes.paragraph.create({}, parseInlineMarkdown(text, schema))
-      ));
+      const blockId = generateBlockId();
+      const createdAt = getCurrentTimestamp();
+      const nodeInfo = { type: 'blockquote', blockId, indentLevel: 0 };
+      const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
+      
+      nodeInfos.push(nodeInfo);
+      nodes.push(schema.nodes.blockquote.create({
+        blockId,
+        createdAt,
+        parentId,
+        children: []
+      }, schema.nodes.paragraph.create({}, parseInlineMarkdown(text, schema))));
       i++;
       continue;
     }
@@ -287,7 +358,18 @@ const parseMarkdown = (text, schema) => {
     // Parse regular paragraphs
     const inlineContent = parseInlineMarkdown(line, schema);
     if (inlineContent.length > 0) {
-      nodes.push(schema.nodes.paragraph.create({}, inlineContent));
+      const blockId = generateBlockId();
+      const createdAt = getCurrentTimestamp();
+      const nodeInfo = { type: 'paragraph', blockId, indentLevel: 0 };
+      const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
+      
+      nodeInfos.push(nodeInfo);
+      nodes.push(schema.nodes.paragraph.create({
+        blockId,
+        createdAt,
+        parentId,
+        children: []
+      }, inlineContent));
     }
     i++;
   }
@@ -318,22 +400,10 @@ export const MarkdownPaste = Extension.create({
                 const { tr } = view.state;
                 let { from } = view.state.selection;
                 
-                // Generate a single temporary blockId for all pasted nodes
-                // This will trigger TimestampPlugin's duplicate ID logic which will
-                // assign proper parent IDs based on document structure
-                const tempBlockId = `paste-temp-${Date.now()}`;
-                
                 // Insert the parsed nodes sequentially, updating position after each insert
                 nodes.forEach((node) => {
-                  // Add temporary blockId to trigger duplicate ID handling
-                  const nodeWithTempId = node.type.create({
-                    ...node.attrs,
-                    blockId: tempBlockId,
-                    createdAt: new Date().toISOString(),
-                  }, node.content, node.marks);
-                  
-                  tr.insert(from, nodeWithTempId);
-                  from += nodeWithTempId.nodeSize; // Update position for next insertion
+                  tr.insert(from, node);
+                  from += node.nodeSize; // Update position for next insertion
                 });
                 
                 view.dispatch(tr);
