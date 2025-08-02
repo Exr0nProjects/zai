@@ -453,17 +453,29 @@ export const CustomListItem = Paragraph.extend({
                 this.editor.view.dispatch(tr);
                 return true;
               } else {
-                // Convert to paragraph if at top level
-                return this.editor.commands.setParagraph();
+                // Convert to paragraph if at top level while preserving block attributes
+                const state = this.editor.state;
+                const tr = state.tr;
+                const preservedAttrs = { ...node.attrs };
+                // Remove list-specific attributes
+                delete preservedAttrs.listType;
+                delete preservedAttrs.indentLevel;
+                delete preservedAttrs.checkboxState;
+                
+                tr.setNodeMarkup($from.before(depth), state.schema.nodes.paragraph, preservedAttrs);
+                this.editor.view.dispatch(tr);
+                return true;
               }
             } else {
               // Create new list item with same type and indent level
               return this.editor.commands.splitBlock({
                 keepMarks: false,
               }) && this.editor.commands.setCustomListItem({
+                ...node.attrs, // Preserve existing attributes
                 listType: node.attrs.listType,
                 indentLevel: node.attrs.indentLevel,
                 checkboxState: 'todo', // Always start new items as todo
+                // Note: TimestampPlugin will assign new blockId, createdAt, and parentId
               });
             }
           }
@@ -486,8 +498,18 @@ export const CustomListItem = Paragraph.extend({
                 this.editor.view.dispatch(tr);
                 return true;
               } else {
-                // Convert to paragraph if at top level
-                return this.editor.commands.setParagraph();
+                // Convert to paragraph if at top level while preserving block attributes
+                const state = this.editor.state;
+                const tr = state.tr;
+                const preservedAttrs = { ...node.attrs };
+                // Remove list-specific attributes
+                delete preservedAttrs.listType;
+                delete preservedAttrs.indentLevel;
+                delete preservedAttrs.checkboxState;
+                
+                tr.setNodeMarkup($from.before(depth), state.schema.nodes.paragraph, preservedAttrs);
+                this.editor.view.dispatch(tr);
+                return true;
               }
             }
           }
@@ -564,9 +586,16 @@ export const CustomListItem = Paragraph.extend({
       textblockTypeInputRule({
         find: /^(\s*)- $/,
         type: this.type,
-        getAttributes: (match) => {
+        getAttributes: (match, context) => {
           const indentLevel = Math.floor(match[1].length / 2);
+          
+          // Preserve all existing block attributes when converting
+          // Note: context might be undefined or not have a node property
+          const node = context?.node;
+          const preservedAttrs = node && node.attrs ? { ...node.attrs } : {};
+          
           return {
+            ...preservedAttrs,
             listType: 'bullet',
             indentLevel,
             checkboxState: 'todo'
@@ -578,7 +607,7 @@ export const CustomListItem = Paragraph.extend({
       textblockTypeInputRule({
         find: /^(\s*)-\s*\[(.)\]\s*$/,
         type: this.type,
-        getAttributes: (match) => {
+        getAttributes: (match, context) => {
           const indentLevel = Math.floor(match[1].length / 2);
           const checkboxChar = match[2];
           
@@ -586,7 +615,13 @@ export const CustomListItem = Paragraph.extend({
           if (checkboxChar === 'x' || checkboxChar === 'X') checkboxState = 'done';
           else if (checkboxChar === '-') checkboxState = 'dropped';
           
+          // Preserve all existing block attributes when converting
+          // Note: context might be undefined or not have a node property
+          const node = context?.node;
+          const preservedAttrs = node && node.attrs ? { ...node.attrs } : {};
+          
           return {
+            ...preservedAttrs,
             listType: 'checkbox',
             indentLevel,
             checkboxState

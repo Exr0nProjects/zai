@@ -172,10 +172,38 @@ const calculateParentId = (nodeIndex, nodeInfos, currentNode) => {
   return null; // No parent found in markdown structure
 };
 
+// Helper function to update parent-child relationships
+const updateParentChildRelationship = (childBlockId, parentId, nodeMap, nodes) => {
+  if (!parentId) return;
+  
+  // Find the parent node in our tracking
+  const parentEntry = nodeMap.get(parentId);
+  if (!parentEntry) return;
+  
+  // Update the parent's children array
+  const currentChildren = parentEntry.node.attrs.children || [];
+  if (!currentChildren.includes(childBlockId)) {
+    const newChildren = [...currentChildren, childBlockId];
+    
+    // Create updated parent node with new children array
+    const updatedParentNode = parentEntry.node.type.create({
+      ...parentEntry.node.attrs,
+      children: newChildren
+    }, parentEntry.node.content);
+    
+    // Update in nodes array
+    nodes[parentEntry.index] = updatedParentNode;
+    
+    // Update in nodeMap
+    nodeMap.set(parentId, { node: updatedParentNode, index: parentEntry.index });
+  }
+};
+
 const parseMarkdown = (text, schema) => {
   const lines = text.split('\n');
   const nodes = [];
   const nodeInfos = []; // Track node metadata for parent calculation
+  const nodeMap = new Map(); // Track nodes by blockId for updating children arrays
   let i = 0;
   
   // Track indentation levels for dynamic bullet list parsing
@@ -193,12 +221,17 @@ const parseMarkdown = (text, schema) => {
       const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
       
       nodeInfos.push(nodeInfo);
-      nodes.push(schema.nodes.paragraph.create({
+      const node = schema.nodes.paragraph.create({
         blockId,
         createdAt,
         parentId,
         children: []
-      }, []));
+      }, []);
+      
+      nodes.push(node);
+      nodeMap.set(blockId, { node, index: nodes.length - 1 });
+      updateParentChildRelationship(blockId, parentId, nodeMap, nodes);
+      
       i++;
       continue;
     }
@@ -214,13 +247,18 @@ const parseMarkdown = (text, schema) => {
       const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
       
       nodeInfos.push(nodeInfo);
-      nodes.push(schema.nodes.heading.create({
+      const node = schema.nodes.heading.create({
         level,
         blockId,
         createdAt,
         parentId,
         children: []
-      }, schema.text(text)));
+      }, schema.text(text));
+      
+      nodes.push(node);
+      nodeMap.set(blockId, { node, index: nodes.length - 1 });
+      updateParentChildRelationship(blockId, parentId, nodeMap, nodes);
+      
       i++;
       continue;
     }
@@ -269,7 +307,7 @@ const parseMarkdown = (text, schema) => {
       
       nodeInfos.push(nodeInfo);
       const inlineContent = parseInlineMarkdown(text, schema);
-      nodes.push(schema.nodes.customListItem.create({
+      const node = schema.nodes.customListItem.create({
         listType: 'checkbox',
         indentLevel,
         checkboxState,
@@ -277,7 +315,11 @@ const parseMarkdown = (text, schema) => {
         createdAt,
         parentId,
         children: []
-      }, inlineContent));
+      }, inlineContent);
+      
+      nodes.push(node);
+      nodeMap.set(blockId, { node, index: nodes.length - 1 });
+      updateParentChildRelationship(blockId, parentId, nodeMap, nodes);
       
       i++;
       continue;
@@ -322,14 +364,18 @@ const parseMarkdown = (text, schema) => {
       
       nodeInfos.push(nodeInfo);
       const inlineContent = parseInlineMarkdown(text, schema);
-      nodes.push(schema.nodes.customListItem.create({
+      const node = schema.nodes.customListItem.create({
         listType: 'bullet',
         indentLevel,
         blockId,
         createdAt,
         parentId,
         children: []
-      }, inlineContent));
+      }, inlineContent);
+      
+      nodes.push(node);
+      nodeMap.set(blockId, { node, index: nodes.length - 1 });
+      updateParentChildRelationship(blockId, parentId, nodeMap, nodes);
       
       i++;
       continue;
@@ -345,12 +391,17 @@ const parseMarkdown = (text, schema) => {
       const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
       
       nodeInfos.push(nodeInfo);
-      nodes.push(schema.nodes.blockquote.create({
+      const node = schema.nodes.blockquote.create({
         blockId,
         createdAt,
         parentId,
         children: []
-      }, schema.nodes.paragraph.create({}, parseInlineMarkdown(text, schema))));
+      }, schema.nodes.paragraph.create({}, parseInlineMarkdown(text, schema)));
+      
+      nodes.push(node);
+      nodeMap.set(blockId, { node, index: nodes.length - 1 });
+      updateParentChildRelationship(blockId, parentId, nodeMap, nodes);
+      
       i++;
       continue;
     }
@@ -364,12 +415,16 @@ const parseMarkdown = (text, schema) => {
       const parentId = calculateParentId(nodeInfos.length, nodeInfos, nodeInfo);
       
       nodeInfos.push(nodeInfo);
-      nodes.push(schema.nodes.paragraph.create({
+      const node = schema.nodes.paragraph.create({
         blockId,
         createdAt,
         parentId,
         children: []
-      }, inlineContent));
+      }, inlineContent);
+      
+      nodes.push(node);
+      nodeMap.set(blockId, { node, index: nodes.length - 1 });
+      updateParentChildRelationship(blockId, parentId, nodeMap, nodes);
     }
     i++;
   }

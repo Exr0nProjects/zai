@@ -147,6 +147,9 @@
   
   // Define focusSearchInput function early for keyboard shortcut
   function focusSearchInput() {
+    // Prevent browser's default Cmd-F behavior
+    event?.preventDefault?.();
+    
     // On mobile, expand search first if not already expanded
     if (window.innerWidth < 768 && !isSearchExpanded) { // md breakpoint
       isSearchExpanded = true;
@@ -160,7 +163,7 @@
       }, 100);
     } else {
       // On desktop or when already expanded, focus the appropriate input
-      const desktopInput = document.querySelector('input[placeholder="Search notes..."]:not(.mobile-search-input)');
+      const desktopInput = document.querySelector('input[placeholder*="filter"]:not(.mobile-search-input)');
       const mobileInput = document.querySelector('.mobile-search-input');
       
       const targetInput = mobileInput || desktopInput;
@@ -168,6 +171,46 @@
         targetInput.focus();
         targetInput.select();
       }
+    }
+  }
+
+  // Focus on center screen block (pinned block) and close search
+  function focusOnPinnedBlock() {
+    if (!streamingSearch || !editor) return;
+    
+    // Find the current center block
+    const centerBlock = streamingSearch.findCenterScreenBlock();
+    
+    if (centerBlock) {
+      // Focus the editor on this block
+      try {
+        // Set the cursor position to the beginning of the center block
+        const blockPosition = centerBlock.position;
+        editor.commands.focus();
+        editor.commands.setTextSelection(blockPosition);
+        
+        // Scroll to keep this block centered
+        streamingSearch.scrollToKeepBlockCentered(centerBlock.blockId);
+      } catch (error) {
+        console.warn('Error focusing on pinned block:', error);
+        // Fallback: just focus the editor
+        editor.commands.focus();
+      }
+    } else {
+      // No center block found, just focus the editor
+      editor.commands.focus();
+    }
+    
+    // Close search UI on mobile
+    if (isSearchExpanded) {
+      isSearchExpanded = false;
+    }
+    
+    // Clear search input focus
+    const activeElement = document.activeElement;
+    if (activeElement && (activeElement.classList.contains('mobile-search-input') || 
+                         activeElement.placeholder?.includes('filter'))) {
+      activeElement.blur();
     }
   }
 
@@ -293,7 +336,13 @@
     
     addKeyboardShortcuts() {
       return {
-        'Mod-f': () => {
+        'Mod-f': (props) => {
+          // Prevent browser's default search behavior
+          if (props.event) {
+            props.event.preventDefault();
+            props.event.stopPropagation();
+          }
+          
           // Focus the search input when Cmd+F is pressed
           focusSearchInput();
           return true;
@@ -877,8 +926,20 @@
       setupVirtualKeyboard();
     }
     
+    // Global keydown listener for Command-F search functionality
+    const globalKeydownHandler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        e.stopPropagation();
+        focusSearchInput();
+      }
+    };
+    
+    document.addEventListener('keydown', globalKeydownHandler, true);
+    
     return () => {
       clearInterval(timelineInterval);
+      document.removeEventListener('keydown', globalKeydownHandler, true);
       for (let cleanup of onMountCleanup) {
         cleanup();
       }
@@ -1200,35 +1261,43 @@
           if (currentNode.attrs.checkboxState === 'todo') {
             // todo → done
             editor.commands.setCustomListItem({
-              listType: 'checkbox',
-              indentLevel: currentNode.attrs.indentLevel,
+              ...currentNode.attrs,
               checkboxState: 'done'
             });
           } else if (currentNode.attrs.checkboxState === 'done') {
             // done → dropped
             editor.commands.setCustomListItem({
-              listType: 'checkbox',
-              indentLevel: currentNode.attrs.indentLevel,
+              ...currentNode.attrs,
               checkboxState: 'dropped'
             });
           } else {
             // dropped → bullet list (at same indent level)
             editor.commands.setCustomListItem({
+              ...currentNode.attrs,
               listType: 'bullet',
-              indentLevel: currentNode.attrs.indentLevel,
               checkboxState: null
             });
           }
         } else {
           // bullet → todo
           editor.commands.setCustomListItem({
+            ...currentNode.attrs,
             listType: 'checkbox',
-            indentLevel: currentNode.attrs.indentLevel,
             checkboxState: 'todo'
           });
         }
       } else {
         // paragraph → todo
+        // Find the current block node to preserve its attributes
+        let currentBlockNode = null;
+        for (let depth = $pos.depth; depth >= 0; depth--) {
+          const node = $pos.node(depth);
+          if (node.attrs && node.attrs.blockId) {
+            currentBlockNode = node;
+            break;
+          }
+        }
+        
         // Try to get current indent level from any nearby custom list items
         let currentIndent = 0;
         
@@ -1245,6 +1314,7 @@
         }
         
         editor.commands.setCustomListItem({
+          ...(currentBlockNode ? currentBlockNode.attrs : {}),
           listType: 'checkbox',
           indentLevel: currentIndent,
           checkboxState: 'todo'
@@ -1469,8 +1539,17 @@
               type="text"
               bind:value={searchQuery}
               placeholder={isSearchExpanded ? "save" : "search"}
-              class="w-32 h-full px-3 text-sm bg-transparent border-none outline-none focus:ring-0 text-center rounded-l-full"
-              on:keypress={(e) => e.key === 'Enter' && handleSearch()}
+              class="mobile-search-input w-32 h-full px-3 text-sm bg-transparent border-none outline-none focus:ring-0 text-center rounded-l-full"
+              on:keydown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSearch();
+                  focusOnPinnedBlock();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  focusOnPinnedBlock();
+                }
+              }}
               on:focus={() => {/* placeholder will show 'save' when expanded */}}
               on:blur={() => isSearchExpanded = false}
             />
@@ -1514,7 +1593,16 @@
                 placeholder="filter"
                 tabindex="-1"
                 class="w-24 h-full px-3 text-sm bg-transparent border-none outline-none focus:ring-0 flex-grow text-center rounded-l-full"
-                on:keypress={(e) => e.key === 'Enter' && handleSearch()}
+                on:keydown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSearch();
+                    focusOnPinnedBlock();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    focusOnPinnedBlock();
+                  }
+                }}
               />
               <button
                 on:click={handleSearch}

@@ -508,6 +508,8 @@ export class StreamingSearch {
         // Recursively mark grandchildren
         this.markChildrenForVisibility(childId, shouldShowBlocks, allNodes, visited);
       }
+    } else {
+      console.warn('children array is not an array', children);
     }
   }
 

@@ -118,13 +118,17 @@ export const TimestampPlugin = Extension.create({
           // Check for deleted nodes and update parent children arrays
           const oldBlockIds = new Set();
           const newBlockIds = new Set();
-          const parentMap = new Map();
+          const parentMap = new Map(); // blockId -> parentId
+          const childrenMap = new Map(); // blockId -> children array
           
           oldState.doc.descendants((node) => {
             if (node.attrs?.blockId) {
               oldBlockIds.add(node.attrs.blockId);
               if (node.attrs.parentId) {
                 parentMap.set(node.attrs.blockId, node.attrs.parentId);
+              }
+              if (node.attrs.children) {
+                childrenMap.set(node.attrs.blockId, node.attrs.children);
               }
             }
           });
@@ -137,6 +141,77 @@ export const TimestampPlugin = Extension.create({
           
           const deletedBlockIds = [...oldBlockIds].filter(id => !newBlockIds.has(id));
           
+          // Handle parent/child relationship updates for deleted nodes
+          let relationshipUpdateTr = null;
+          if (deletedBlockIds.length > 0) {
+            const relationshipUpdates = new Map(); // nodePos -> new attributes
+            
+            deletedBlockIds.forEach(deletedId => {
+              const deletedParentId = parentMap.get(deletedId);
+              const deletedChildren = childrenMap.get(deletedId) || [];
+              
+              if (LOG) console.log(`🗑️ Processing deletion of block ${deletedId.slice(-8)}, parent: ${deletedParentId?.slice(-8) || 'none'}, children: [${deletedChildren.map(id => id.slice(-8)).join(', ')}]`);
+              
+              // Update each child's parent to point to the deleted node's parent
+              deletedChildren.forEach(childId => {
+                // Find the child node in the new state and update its parentId
+                newState.doc.descendants((node, pos) => {
+                  if (node.attrs?.blockId === childId) {
+                    const newParentId = deletedParentId || null;
+                    
+                    if (node.attrs.parentId !== newParentId) {
+                      relationshipUpdates.set(pos, {
+                        ...node.attrs,
+                        parentId: newParentId
+                      });
+                      
+                      if (LOG) console.log(`🔗 Updating child ${childId.slice(-8)} parent: ${node.attrs.parentId?.slice(-8) || 'none'} -> ${newParentId?.slice(-8) || 'none'}`);
+                    }
+                    return false; // Stop traversing once found
+                  }
+                });
+              });
+              
+              // Update the parent's children array to remove deleted node and add its children
+              if (deletedParentId) {
+                newState.doc.descendants((node, pos) => {
+                  if (node.attrs?.blockId === deletedParentId) {
+                    const currentChildren = node.attrs.children || [];
+                    // Remove the deleted node and add its children
+                    const newChildren = currentChildren
+                      .filter(id => id !== deletedId) // Remove deleted node
+                      .concat(deletedChildren); // Add deleted node's children
+                    
+                    // Deduplicate
+                    const uniqueChildren = [...new Set(newChildren)];
+                    
+                    if (JSON.stringify(currentChildren) !== JSON.stringify(uniqueChildren)) {
+                      const existingUpdate = relationshipUpdates.get(pos);
+                      relationshipUpdates.set(pos, {
+                        ...(existingUpdate || node.attrs),
+                        children: uniqueChildren
+                      });
+                      
+                      if (LOG) console.log(`👨‍👧‍👦 Updating parent ${deletedParentId.slice(-8)} children: removing ${deletedId.slice(-8)}, adding [${deletedChildren.map(id => id.slice(-8)).join(', ')}]`);
+                    }
+                    return false; // Stop traversing once found
+                  }
+                });
+              }
+            });
+            
+            // Apply all relationship updates in a single transaction
+            if (relationshipUpdates.size > 0) {
+              relationshipUpdateTr = newState.tr.setMeta('zai-relationshipUpdate', true);
+              
+              relationshipUpdates.forEach((newAttrs, pos) => {
+                relationshipUpdateTr.setNodeMarkup(pos, null, newAttrs);
+              });
+              
+              if (LOG) console.log(`🔄 Applied ${relationshipUpdates.size} relationship updates for ${deletedBlockIds.length} deleted blocks`);
+            }
+          }
+          
           // Skip processing for timeline sort transactions
           const isTimelineSort = transactions.some(tr => tr.getMeta('timelineSort'));
           if (isTimelineSort) {
@@ -148,6 +223,13 @@ export const TimestampPlugin = Extension.create({
           const isTimestampTransaction = transactions.some(tr => tr.getMeta('zai-idRelabel'));
           if (isTimestampTransaction) {
             if (LOG) console.log('🕒 TimestampPlugin skipping own timestamp transaction');
+            return null;
+          }
+          
+          // Skip processing for our own relationship update transactions to prevent infinite loops
+          const isRelationshipTransaction = transactions.some(tr => tr.getMeta('zai-relationshipUpdate'));
+          if (isRelationshipTransaction) {
+            if (LOG) console.log('🕒 TimestampPlugin skipping own relationship transaction');
             return null;
           }
           
@@ -332,7 +414,25 @@ export const TimestampPlugin = Extension.create({
                         tr.setMeta('zai-idRelabel', true);
           }
           
-          return tr;
+          // Combine transactions if needed
+          if (tr && relationshipUpdateTr) {
+            // We have both relationship updates and timestamp updates
+            // Apply relationship updates to the timestamp transaction
+            relationshipUpdateTr.steps.forEach(step => {
+              tr.step(step);
+            });
+            tr.setMeta('zai-idRelabel', true);
+            tr.setMeta('zai-relationshipUpdate', true);
+            return tr;
+          } else if (tr) {
+            // Only timestamp updates
+            return tr;
+          } else if (relationshipUpdateTr) {
+            // Only relationship updates
+            return relationshipUpdateTr;
+          }
+          
+          return null;
         },
       }),
     ];
