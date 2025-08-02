@@ -287,11 +287,13 @@ export const TimestampPlugin = Extension.create({
             
             // Create temporary ID map to track newly assigned IDs within this transaction
             const tempIdMap = new Map();
-            const parentChildUpdates = new Map(); // Track parent updates needed
+            const parentChildUpdates = new Map(); // Track parent children to add
+            const parentChildRemovals = new Map(); // Track parent children to remove
             
             nodesToUpdate.forEach(({ pos, node, reason, oldBlockId, newBlockId, newTimestamp }) => {
               // const parentId = oldBlockId || getParentId(newState.doc, pos, tempIdMap);
               let parentId = getParentId(newState.doc, pos, tempIdMap); // TODO: `paragraph \n - bullet` still paragraph is bullet's sibling, not the listitem?
+              const oldParentId = node.attrs.parentId; // Track the old parent to update its children array
               
               // Special case for duplicate blockIds: check if parent and its parent are both empty top-level paragraphs
               if (reason === 'duplicate-id' && parentId) {
@@ -325,6 +327,14 @@ export const TimestampPlugin = Extension.create({
                           isEmptyTopLevelParagraph(originalParentNode, originalParentPos, newState.doc)) {
                         // Both parent and grandparent are empty top-level paragraphs, set parent to null
                         parentId = null;
+                        
+                        // Also remove this node from old parent's children array since parentId is now null
+                        if (oldParentId) {
+                          if (!parentChildRemovals.has(oldParentId)) {
+                            parentChildRemovals.set(oldParentId, new Set());
+                          }
+                          parentChildRemovals.get(oldParentId).add(newBlockId);
+                        }
                       }
                     }
                   }
@@ -353,6 +363,16 @@ export const TimestampPlugin = Extension.create({
               });
 
               // Track parent-child relationship updates needed
+              // Handle old parent removal (if parent changed or node got new ID)
+              if (oldParentId && (oldParentId !== parentId || oldBlockId !== newBlockId)) {
+                const childIdToRemove = reason === 'duplicate-id' ? oldBlockId : newBlockId;
+                if (!parentChildRemovals.has(oldParentId)) {
+                  parentChildRemovals.set(oldParentId, new Set());
+                }
+                parentChildRemovals.get(oldParentId).add(childIdToRemove);
+              }
+              
+              // Handle new parent addition
               if (parentId) {
                 if (!parentChildUpdates.has(parentId)) {
                   parentChildUpdates.set(parentId, new Set());
@@ -369,16 +389,35 @@ export const TimestampPlugin = Extension.create({
             });
             
             // Update parent children arrays in the same transaction
-            parentChildUpdates.forEach((childIds, parentId) => {
+            const allParentUpdates = new Set([...parentChildUpdates.keys(), ...parentChildRemovals.keys()]);
+            
+            allParentUpdates.forEach(parentId => {
               tr.doc.descendants((node, pos) => {
                 if (node.attrs && node.attrs.blockId === parentId) {
                   const currentChildren = node.attrs.children || [];
-                  const newChildren = [...new Set([...currentChildren, ...childIds])]; // Merge and deduplicate
+                  let newChildren = [...currentChildren];
                   
-                  tr.setNodeMarkup(pos, null, {
-                    ...node.attrs,
-                    children: newChildren
-                  });
+                  // Remove children that need to be removed
+                  if (parentChildRemovals.has(parentId)) {
+                    const toRemove = parentChildRemovals.get(parentId);
+                    newChildren = newChildren.filter(id => !toRemove.has(id));
+                  }
+                  
+                  // Add new children
+                  if (parentChildUpdates.has(parentId)) {
+                    const toAdd = parentChildUpdates.get(parentId);
+                    newChildren = [...new Set([...newChildren, ...toAdd])]; // Merge and deduplicate
+                  }
+                  
+                  // Only update if children array changed
+                  if (JSON.stringify(currentChildren.sort()) !== JSON.stringify(newChildren.sort())) {
+                    tr.setNodeMarkup(pos, null, {
+                      ...node.attrs,
+                      children: newChildren
+                    });
+                    
+                    if (LOG) console.log(`👨‍👧‍👦 Updated parent ${parentId.slice(-8)} children: ${currentChildren.length} -> ${newChildren.length}`);
+                  }
                   
                   return false; // Stop traversal for this parent
                 }

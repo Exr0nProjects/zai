@@ -198,9 +198,11 @@ pill {
   transition: all 0.2s ease;
 }
 
-.toolbar-button:hover {
-  color: var(--accent);
-  background-color: rgba(var(--accent-rgb), 0.1);
+@media (min-width: 768px) {
+  .toolbar-button:hover {
+    color: var(--accent);
+    background-color: rgba(var(--accent-rgb), 0.1);
+  }
 }
 
 .mobile-search-button {
