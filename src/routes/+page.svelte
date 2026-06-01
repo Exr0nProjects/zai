@@ -931,7 +931,7 @@
     
     // Global keydown listener for Command-F search functionality
     const globalKeydownHandler = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+      if ((e.metaKey) && e.key === 'f') {
         e.preventDefault();
         e.stopPropagation();
         focusSearchInput();
