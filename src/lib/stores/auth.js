@@ -1,6 +1,7 @@
 import { writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { supabase } from '$lib/supabase.js';
+import { DISABLE_SUPABASE, OFFLINE_FALLBACK_USER } from '$lib/config.js';
 
 // Standardize phone number format for consistent user identification
 function standardizePhoneNumber(phone) {
@@ -42,39 +43,49 @@ export const isLoading = writable(true);
 
 // Initialize auth state from Supabase session
 if (browser) {
-  // Get initial session with error handling
-  supabase.auth.getSession()
-    .then(({ data: { session: currentSession } }) => {
-      if (currentSession) {
-        user.set(currentSession.user);
-        session.set(currentSession);
+  if (DISABLE_SUPABASE) {
+    user.set(OFFLINE_FALLBACK_USER);
+    session.set({ user: OFFLINE_FALLBACK_USER });
+    isAuthenticated.set(true);
+    isLoading.set(false);
+  } else {
+    // Get initial session with error handling
+    supabase.auth.getSession()
+      .then(({ data: { session: currentSession } }) => {
+        if (currentSession) {
+          user.set(currentSession.user);
+          session.set(currentSession);
+          isAuthenticated.set(true);
+        }
+        isLoading.set(false);
+      })
+      .catch((error) => {
+        console.warn('Supabase auth initialization failed:', error);
+        isLoading.set(false);
+      });
+
+    // Listen for auth changes
+    supabase.auth.onAuthStateChange((event, newSession) => {
+      if (newSession) {
+        user.set(newSession.user);
+        session.set(newSession);
         isAuthenticated.set(true);
+      } else {
+        user.set(null);
+        session.set(null);
+        isAuthenticated.set(false);
       }
       isLoading.set(false);
-    })
-    .catch((error) => {
-      console.warn('Supabase auth initialization failed:', error);
-      isLoading.set(false);
     });
-
-  // Listen for auth changes
-  supabase.auth.onAuthStateChange((event, newSession) => {
-    if (newSession) {
-      user.set(newSession.user);
-      session.set(newSession);
-      isAuthenticated.set(true);
-    } else {
-      user.set(null);
-      session.set(null);
-      isAuthenticated.set(false);
-    }
-    isLoading.set(false);
-  });
+  }
 }
 
 // Auth actions using Supabase Auth
 export const authActions = {
   async sendOTP(phone) {
+    if (DISABLE_SUPABASE) {
+      return { success: true, data: null, standardPhone: phone };
+    }
     try {
       const standardPhone = standardizePhoneNumber(phone);
       console.log('🔐 Sending OTP to standardized phone:', standardPhone);
@@ -93,6 +104,9 @@ export const authActions = {
   },
 
   async verifyOTP(phone, token) {
+    if (DISABLE_SUPABASE) {
+      return { success: true, data: null };
+    }
     try {
       const standardPhone = standardizePhoneNumber(phone);
       console.log('🔐 Verifying OTP for standardized phone:', standardPhone, 'token:', token);
@@ -126,6 +140,12 @@ export const authActions = {
   },
 
   async logout() {
+    if (DISABLE_SUPABASE) {
+      user.set(OFFLINE_FALLBACK_USER);
+      session.set({ user: OFFLINE_FALLBACK_USER });
+      isAuthenticated.set(true);
+      return { success: true };
+    }
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;

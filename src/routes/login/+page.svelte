@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { onMount, tick } from 'svelte';
   import ZaiLogo from '$lib/components/ZaiLogo.svelte';
+  import { DISABLE_SUPABASE } from '$lib/config.js';
   
   let phone = '';
   let otp = '';
@@ -13,6 +14,11 @@
   let phoneInput;
   
   onMount(() => {
+    if (DISABLE_SUPABASE) {
+      goto('/');
+      return;
+    }
+
     // Auto-focus the phone input when page loads
     if (step === 'phone' && phoneInput) {
       phoneInput.focus();
@@ -224,4 +230,4 @@
 
     </form>
   </div>
-</div> 
+</div>

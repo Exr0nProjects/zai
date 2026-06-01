@@ -38,6 +38,7 @@
   import { KeyboardNavigation } from '$lib/tiptap/KeyboardNavigationPlugin.js';
   import { HiddenBlocksPlugin } from '$lib/tiptap/HiddenBlocksPlugin.js';
   import { tagManager, isTagProcessing, tagStats } from '$lib/utils/tagManager.js';
+  import { DISABLE_SUPABASE } from '$lib/config.js';
   import { StreamingSearch } from '$lib/utils/streamingSearch.js';
   import { dev } from '$app/environment';
   import ZaiLogo from '$lib/components/ZaiLogo.svelte';
@@ -54,7 +55,7 @@
   const debugParentBrackets = false; // Set to true to show parent relationship brackets
   
   // Online/offline detection
-  let isOnline = true;
+  let isOnline = !DISABLE_SUPABASE;
   
   let searchQuery = '';
   let editor;
@@ -361,12 +362,12 @@
   }
   
   // Handle user login/logout and SupabaseProvider management
-  $: if ($user && !supabaseProvider && isOnline) {
+  $: if (!DISABLE_SUPABASE && $user && !supabaseProvider && isOnline) {
     // User logged in while online - create SupabaseProvider
     const documentName = 'timeline-notes';
     supabaseProvider = new SupabaseProvider(documentName, ydoc, $user, isOnline);
-  } else if (!$user && supabaseProvider) {
-    // User logged out - clean up SupabaseProvider
+  } else if ((DISABLE_SUPABASE || !$user) && supabaseProvider) {
+    // User logged out or Supabase disabled - clean up SupabaseProvider
     supabaseProvider.destroy();
     supabaseProvider = null;
   }
@@ -422,10 +423,14 @@
   
   onMount(() => {
     // Check online status
-    isOnline = navigator.onLine;
+    isOnline = DISABLE_SUPABASE ? false : navigator.onLine;
     
     // Listen for online/offline events
     window.addEventListener('online', () => {
+      if (DISABLE_SUPABASE) {
+        isOnline = false;
+        return;
+      }
       isOnline = true;
       // Enable SupabaseProvider when coming back online
       if (supabaseProvider) {
@@ -438,6 +443,10 @@
     });
     
     window.addEventListener('offline', () => {
+      if (DISABLE_SUPABASE) {
+        isOnline = false;
+        return;
+      }
       isOnline = false;
       // Disable SupabaseProvider when going offline
       if (supabaseProvider) {
@@ -827,7 +836,7 @@
     const documentName = 'timeline-notes'; // Simple document name per user
     
     // Initialize Supabase provider when user is available and online
-    if ($user && isOnline) {
+    if (!DISABLE_SUPABASE && $user && isOnline) {
       supabaseProvider = new SupabaseProvider(documentName, ydoc, $user, isOnline);
     }
     
@@ -1491,14 +1500,22 @@
   <div class="flex items-start justify-between">
     <!-- Left: Phone number (red on hover) -->
     <div class="pointer-events-auto opacity-10 hover:opacity-100 transition-opacity duration-200">
-      <button 
-        on:click={logout}
-        class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2 transition-all duration-200"
-      >
-        <div class="text-sm font-medium text-gray-900 hover:text-red-600 transition-colors">
-          {$user?.phone || $user?.email || 'Loading...'}
+      {#if DISABLE_SUPABASE}
+        <div class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2 border border-gray-200/50">
+          <div class="text-sm font-medium text-gray-900">
+            Offline mode
+          </div>
         </div>
-      </button>
+      {:else}
+        <button 
+          on:click={logout}
+          class="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-4 py-2 transition-all duration-200"
+        >
+          <div class="text-sm font-medium text-gray-900 hover:text-red-600 transition-colors">
+            {$user?.phone || $user?.email || 'Loading...'}
+          </div>
+        </button>
+      {/if}
     </div>
     
     <!-- Right: Tag processing indicator, Debug button and zai with online indicator -->
@@ -2389,5 +2406,3 @@
   
 
 </style>
-
-

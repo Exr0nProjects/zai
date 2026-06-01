@@ -5,6 +5,7 @@
   import { isAuthenticated, isLoading } from '$lib/stores/auth.js';
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
+  import { DISABLE_SUPABASE } from '$lib/config.js';
   
   // PWA variables
   let updateAvailable = false;
@@ -49,9 +50,13 @@
   
   // Reactive navigation guard
   $: {
-    if (!$isLoading) {
+    if (DISABLE_SUPABASE) {
+      if (browser && $page.route.id === '/login') {
+        goto('/');
+      }
+    } else if (!$isLoading) {
       const isLoginPage = $page.route.id === '/login';
-      
+
       if (!$isAuthenticated && !isLoginPage) {
         goto('/login');
       } else if ($isAuthenticated && isLoginPage) {
